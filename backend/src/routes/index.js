@@ -3,10 +3,10 @@
 /**
  * The API router. Every feature's routes get mounted under /api here.
  *
- * Phase 1: only /api/health exists.
+ * Phase 1: /api/health
+ * Phase 2: /api/auth, /api/users
+ *
  * Later phases will add:
- *   router.use('/auth', require('./auth.routes'));
- *   router.use('/users', require('./users.routes'));
  *   router.use('/weights', require('./weights.routes'));
  *   router.use('/workouts', require('./workouts.routes'));
  *   router.use('/friends', require('./friends.routes'));
@@ -15,9 +15,15 @@
  */
 
 const express = require('express');
+const { apiLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
+// A broad limiter across the whole API, on top of the tighter auth limiter.
+router.use(apiLimiter);
+
 router.use('/health', require('./health.routes'));
+router.use('/auth', require('./auth.routes'));
+router.use('/users', require('./users.routes'));
 
 module.exports = router;

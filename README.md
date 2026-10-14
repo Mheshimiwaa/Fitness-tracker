@@ -4,7 +4,7 @@ RepRise is a beginner-friendly Android fitness-tracking application built with *
 
 It lets users track body weight, calculate BMI, log strength workouts, get **progressive overload** suggestions, and compete with friends on a weekly leaderboard — inspired by Duolingo's consistency-based social motivation.
 
-> **Project status:** Phase 1 (foundation) is complete and verified. See [Implementation phases](#implementation-phases).
+> **Project status:** Phase 1 (foundation) is complete and verified. Phase 2 authentication & profile backend is complete (see [Implementation phases](#implementation-phases)); the Android auth screens are in progress.
 
 ---
 
@@ -45,8 +45,8 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 ### Essential (MVP)
 | Feature | Status |
 |---|---|
-| Registration, login, logout, JWT-protected endpoints | Planned (Phase 2) |
-| Editable profile (display name, username, goal, height, unit) | Planned (Phase 2) |
+| Registration, login, logout, JWT-protected endpoints | ✅ Phase 2 |
+| Editable profile (display name, username, goal, height, unit) | ✅ Phase 2 (API) |
 | Dashboard summary with honest empty states | Planned (Phase 3) |
 | Body-weight tracking (CRUD, kg/lb, history, chart, period change) | Planned (Phase 3) |
 | BMI from latest weight + height, with adult categories & disclaimers | Planned (Phase 3) |
@@ -126,13 +126,13 @@ helmet → cors → json body parser (100 kb limit) → request logger (dev)
 routes  (URL → controller)
    │
    ▼
-middleware: verifyJwt → validate(zod) → rateLimit
+middleware: authenticate → validate(zod) → rateLimit
    │
    ▼
 controllers (HTTP concerns only)
    │
    ▼
-services (pure logic: BMI, volume, progression, streaks, leaderboard)
+services (pure logic: auth, profiles — and later BMI, volume, progression, streaks, leaderboard)
    │
    ▼
 database (MongoDB collections + indexes)
@@ -177,15 +177,21 @@ reprise/
     ├── src/
     │   ├── server.js                      # startup: connect DB → ensure indexes → listen
     │   ├── app.js                         # Express app + middleware + routes
-    │   ├── config/env.js                  # central env loading & validation
+    │   ├── config/
+    │   │   ├── env.js                     # central env loading & validation
+    │   │   └── constants.js               # shared rules (goals, units, patterns)
     │   ├── database/                      # connection, collections, indexes
-    │   ├── middleware/                    # requestLogger, notFound, errorHandler
-    │   ├── routes/                        # health.routes.js, index.js
-    │   ├── controllers/                   # (Phase 2+)
-    │   ├── services/                      # (Phase 2+)
-    │   ├── validators/                    # (Phase 2+) Zod schemas
-    │   └── utils/                         # logger, ApiError
-    └── tests/health.test.js
+    │   ├── middleware/                    # requestLogger, notFound, errorHandler,
+    │   │                                  # authenticate, validate, rateLimiter
+    │   ├── routes/                        # index, health, auth, users
+    │   ├── controllers/                   # auth, users
+    │   ├── services/                      # auth, user
+    │   ├── validators/                    # common.fields, auth, user (Zod)
+    │   └── utils/                         # logger, ApiError, password, token
+    └── tests/
+        ├── helpers/                       # setup, app, db (shared test utilities)
+        ├── health.test.js
+        └── auth.test.js
 ```
 
 ---
@@ -334,20 +340,44 @@ Cleartext HTTP is only permitted for `10.0.2.2`, `localhost` and `127.0.0.1` (se
 All routes are prefixed with `/api`. Protected routes require `Authorization: Bearer <token>`.
 
 ### Implemented (Phase 1)
-
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | GET | `/api/health` | no | Service + database health (`200` ok, `503` degraded) |
 
-### Planned
+### Implemented (Phase 2 — authentication & profile)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/auth/register` | no | create an account, returns a JWT (`201`) |
+| POST | `/api/auth/login` | no | sign in with username/email + password, returns a JWT |
+| GET | `/api/auth/me` | yes | the signed-in user (used to validate a stored token) |
+| GET | `/api/users/me` | yes | read my profile |
+| PATCH | `/api/users/me` | yes | update my profile |
+| GET | `/api/users/search?username=<text>` | yes | prefix-search other users (excludes me) |
+
+**Authentication flow**
+
+```
+POST /api/auth/register  { displayName, username, email, password }
+                       -> 201 { user, token }
+POST /api/auth/login     { username, password }     // username may be an email
+                       -> 200 { user, token }
+GET  /api/auth/me        Authorization: Bearer <token>
+                       -> 200 { user }
+```
+
+Rules enforced by the server:
+- Passwords are **bcrypt-hashed** (`BCRYPT_ROUNDS`, default 10) and never returned. Minimum 8 characters, at least one letter and one number.
+- Usernames are 3–20 characters, start with a letter, and use only letters, numbers and underscores (lower-case).
+- Email uniqueness is **case-insensitive**: `Alex@Example.com` and `alex@example.com` are the same account.
+- Wrong password and unknown user return the **same** generic `401`, so usernames cannot be enumerated.
+- Duplicate username/email → `409`; invalid input → `400` with per-field `details`; missing/bad token → `401`.
+- `/api/users/me` only ever reads or writes the **caller's own** document.
+- Auth endpoints are rate-limited (`20` requests / 15 min / IP in normal use).
+
+### Planned (Phases 3–7)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/api/auth/register` | no | create an account |
-| POST | `/api/auth/login` | no | obtain a JWT |
-| GET | `/api/auth/me` | yes | current user |
-| GET/PATCH | `/api/users/me` | yes | read / update profile |
-| GET | `/api/users/search?username=` | yes | find users by username |
 | POST/GET | `/api/weights` | yes | create / list weight entries |
 | GET/PATCH/DELETE | `/api/weights/:id` | yes | read / update / delete one entry |
 | POST/GET | `/api/workouts` | yes | create / list workouts |
@@ -411,9 +441,12 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **19 tests** currently pass.
 
-Phase 1 covers: unknown-route `404` handling, and the health check in both the *degraded* and *ok* states. The "ok" test connects to MongoDB and **skips** if the database is not reachable.
+- **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
+- **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
+
+> **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster, and every test user is deleted before and after the run. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
 **Android**
 
@@ -458,11 +491,11 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 
 ## Professor demonstration procedure
 
-The full sequence below is the target for Phase 7. **Currently only steps 1–2 are runnable** (later steps land in Phases 2–6).
+The full sequence below is the target for Phase 7. **Currently steps 1–3 are runnable** (step 3 via the API/Postman until the Android auth screens land in Phase 2b).
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
 2. Open the Android app and show light/dark theme switching. ✅ *(theme; switch lands in Phase 7)*
-3. Register a new user → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password).
+3. Register a new user → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅ *(via `POST /api/auth/register`; the in-app screen is Phase 2b)*
 4. Log a body weight → show the matching `weight_entries` document.
 5. Show BMI calculated from height + latest weight.
 6. Create a workout with several exercises and sets → show the `workouts` document.
@@ -471,12 +504,14 @@ The full sequence below is the target for Phase 7. **Currently only steps 1–2 
 9. Complete qualifying workouts and show how the weekly leaderboard score is computed.
 10. Explain the architecture, REST API, schema, authentication and scoring rules.
 
-**Test accounts** *(created in Phase 2)*:
+**Test accounts** *(already created in Atlas during Phase 2)*:
 
-| Display name | Username | Email | Purpose |
-|---|---|---|---|
-| Alex Lifter | `alex_lifter` | `alex@example.com` | primary demo account |
-| Sam Spotter | `sam_spotter` | `sam@example.com` | friend / leaderboard rival |
+| Display name | Username | Email | Password | Purpose |
+|---|---|---|---|---|
+| Alex Lifter | `alex_lifter` | `alex@example.com` | `GoodPass123` | primary demo account |
+| Sam Spotter | `sam_spotter` | `sam@example.com` | `GoodPass123` | friend / leaderboard rival |
+
+> These are **demo** credentials for a local project. In a real deployment every account would have its own strong password. Create them (or more) with `POST /api/auth/register`.
 
 All demo data is created through the app so Atlas shows genuine, reproducible records.
 
@@ -487,7 +522,7 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Repo, Android project, Express backend, MongoDB connection, env vars, health check | ✅ **complete & verified** |
-| 2 | Auth (register/login/JWT), Compose theme, navigation, profile model | ⏳ next |
+| 2 | Auth (register/login/JWT), Compose theme, navigation, profile model | 🟡 **backend complete & verified**; Android auth screens next |
 | 3 | Dashboard, weight tracking, BMI, chart | ⏳ |
 | 4 | Workout logging (exercises + sets) | ⏳ |
 | 5 | Progressive overload + unit tests | ⏳ |
@@ -498,7 +533,7 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 
 ## Known limitations & future improvements
 
-- **Phase 1 only** — most screens are honest placeholders.
+- **Phases 1–2 (backend) complete** — the Android app still shows honest placeholders for the feature screens; the auth screens land in Phase 2b.
 - Leaderboard scoring, streaks and progressive overload are all **recomputed on demand** (no cached snapshots). Fine for an MVP; a snapshot collection could be added if leaderboards grow large.
 - BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.
 - Progressive-overload suggestions are **advisory, rule-based** guidance — not medical advice — and never change a workout automatically.

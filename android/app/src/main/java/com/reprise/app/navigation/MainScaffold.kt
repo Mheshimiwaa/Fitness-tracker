@@ -15,10 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.reprise.app.R
 import com.reprise.app.domain.model.ThemeMode
 import com.reprise.app.domain.model.User
@@ -27,6 +29,7 @@ import com.reprise.app.ui.friends.FriendsScreen
 import com.reprise.app.ui.home.HomeScreen
 import com.reprise.app.ui.profile.ProfileScreen
 import com.reprise.app.ui.weights.WeightsScreen
+import com.reprise.app.ui.workouts.WorkoutEditorScreen
 import com.reprise.app.ui.workouts.WorkoutsScreen
 
 /**
@@ -48,7 +51,7 @@ fun MainScaffold(
 ) {
     val navController = rememberNavController()
 
-    // Observe the current destination so we can highlight the selected tab and
+    // Observing the current destination lets us highlight the selected tab and
     // decide whether the bar should be visible at all.
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
@@ -56,6 +59,16 @@ fun MainScaffold(
     // tab so the bar does not flash away on the first frame.
     val isTopLevel = currentRoute == null ||
         TopLevelDestination.entries.any { it.route == currentRoute }
+
+    // Switching tabs: keep a single copy of each on the back stack, and restore
+    // the scroll/state the user left behind.
+    val openTab: (TopLevelDestination) -> Unit = { destination ->
+        navController.navigate(destination.route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -67,19 +80,7 @@ fun MainScaffold(
                         val selected = currentRoute == destination.route
                         NavigationBarItem(
                             selected = selected,
-                            onClick = {
-                                if (!selected) {
-                                    navController.navigate(destination.route) {
-                                        // Keep a single copy of each tab on the back
-                                        // stack and remember where the user was.
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            },
+                            onClick = { if (!selected) openTab(destination) },
                             icon = { DestinationIcon(destination) },
                             label = { Text(stringResource(destination.labelRes)) },
                         )
@@ -98,9 +99,16 @@ fun MainScaffold(
                 HomeScreen(
                     user = user,
                     onOpenWeights = { navController.navigate(WEIGHT_ROUTE) },
+                    onOpenWorkouts = { openTab(TopLevelDestination.WORKOUTS) },
+                    onLogWorkout = { navController.navigate(workoutEditorRoute()) },
                 )
             }
-            composable(TopLevelDestination.WORKOUTS.route) { WorkoutsScreen() }
+            composable(TopLevelDestination.WORKOUTS.route) {
+                WorkoutsScreen(
+                    onLogWorkout = { navController.navigate(workoutEditorRoute()) },
+                    onOpenWorkout = { id -> navController.navigate(workoutEditorRoute(id)) },
+                )
+            }
             composable(TopLevelDestination.FRIENDS.route) { FriendsScreen() }
             composable(TopLevelDestination.PROFILE.route) {
                 ProfileScreen(
@@ -113,9 +121,30 @@ fun MainScaffold(
                 )
             }
 
-            // A pushed detail screen, reachable from the Home tab.
+            // Pushed detail screens, reachable from a tab.
             composable(WEIGHT_ROUTE) {
                 WeightsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(
+                route = "$WORKOUT_EDITOR_ROUTE/{workoutId}",
+                arguments = listOf(
+                    navArgument("workoutId") {
+                        type = NavType.StringType
+                        defaultValue = NEW_WORKOUT_ID
+                    },
+                ),
+            ) { entry ->
+                // "new" is the sentinel for "log a new workout"; anything else
+                // is the id of an existing session to edit.
+                val workoutId = entry.arguments
+                    ?.getString("workoutId")
+                    ?.takeIf { it != NEW_WORKOUT_ID }
+
+                WorkoutEditorScreen(
+                    workoutId = workoutId,
+                    onBack = { navController.popBackStack() },
+                    onDone = { navController.popBackStack() },
+                )
             }
         }
     }

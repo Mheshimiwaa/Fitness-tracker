@@ -207,6 +207,21 @@ test('an empty update body is rejected', () => {
   assert.equal(updateWorkoutSchema.safeParse({}).success, false);
 });
 
+test('an update accepts an explicit null to CLEAR the duration and note', () => {
+  // Without this, a field could be set but never removed: PATCH would have no
+  // way to say "make this blank again".
+  const result = updateWorkoutSchema.safeParse({ durationMinutes: null, notes: null });
+
+  assert.equal(result.success, true);
+  assert.equal(result.data.durationMinutes, null);
+  assert.equal(result.data.notes, null);
+});
+
+test('an update still rejects a nonsense duration', () => {
+  assert.equal(updateWorkoutSchema.safeParse({ durationMinutes: 0 }).success, false);
+  assert.equal(updateWorkoutSchema.safeParse({ durationMinutes: 'soon' }).success, false);
+});
+
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
@@ -385,13 +400,14 @@ dbTest('a workout can be edited, including replacing its exercises', async () =>
     password: 'GoodPass123',
   });
 
-  const { workout } = await logWorkout(token, sampleWorkout());
+  const { workout } = await logWorkout(token, sampleWorkout({ durationMinutes: 60, notes: 'felt strong' }));
 
   const patched = await apiRequest(baseUrl, 'PATCH', `/api/workouts/${workout.id}`, {
     token,
     body: {
       name: 'Push day (deload)',
       durationMinutes: 40,
+      notes: 'taking it easy',
       exercises: [
         { name: 'Bench Press', sets: [{ reps: 12, weight: 40 }] },
       ],
@@ -401,9 +417,40 @@ dbTest('a workout can be edited, including replacing its exercises', async () =>
   assert.equal(patched.status, 200);
   assert.equal(patched.body.workout.name, 'Push day (deload)');
   assert.equal(patched.body.workout.durationMinutes, 40);
+  assert.equal(patched.body.workout.notes, 'taking it easy');
   assert.equal(patched.body.workout.exercises.length, 1);
   assert.equal(patched.body.workout.exercises[0].sets[0].weight, 40);
   assert.equal(patched.body.workout.summary.totalVolumeKg, 480);
+});
+
+dbTest('an explicit null clears the duration and the note', async () => {
+  const { token } = await createUser({
+    displayName: 'Clear Tester',
+    username: 'p4_clear',
+    email: 'p4_clear@example.com',
+    password: 'GoodPass123',
+  });
+
+  const { workout } = await logWorkout(
+    token,
+    sampleWorkout({ durationMinutes: 52, notes: 'felt strong' })
+  );
+  assert.equal(workout.durationMinutes, 52);
+  assert.equal(workout.notes, 'felt strong');
+
+  const cleared = await apiRequest(baseUrl, 'PATCH', `/api/workouts/${workout.id}`, {
+    token,
+    body: { durationMinutes: null, notes: null },
+  });
+
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.body.workout.durationMinutes, null);
+  assert.equal(cleared.body.workout.notes, null);
+
+  // And it sticks: the fields really are gone, not merely hidden in the reply.
+  const reread = await apiRequest(baseUrl, 'GET', `/api/workouts/${workout.id}`, { token });
+  assert.equal(reread.body.workout.durationMinutes, null);
+  assert.equal(reread.body.workout.notes, null);
 });
 
 dbTest('a workout can be deleted, after which it is a 404', async () => {

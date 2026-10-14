@@ -2,15 +2,20 @@ package com.reprise.app.data.remote
 
 import com.reprise.app.data.remote.dto.AuthResponseDto
 import com.reprise.app.data.remote.dto.CreateWeightRequest
+import com.reprise.app.data.remote.dto.CreateWorkoutRequest
 import com.reprise.app.data.remote.dto.DashboardDto
+import com.reprise.app.data.remote.dto.ExerciseCatalogueDto
 import com.reprise.app.data.remote.dto.LatestWeightEnvelopeDto
 import com.reprise.app.data.remote.dto.LoginRequest
 import com.reprise.app.data.remote.dto.RegisterRequest
 import com.reprise.app.data.remote.dto.UpdateProfileRequest
 import com.reprise.app.data.remote.dto.UpdateWeightRequest
+import com.reprise.app.data.remote.dto.UpdateWorkoutRequest
 import com.reprise.app.data.remote.dto.UserEnvelopeDto
 import com.reprise.app.data.remote.dto.WeightEntryEnvelopeDto
 import com.reprise.app.data.remote.dto.WeightHistoryDto
+import com.reprise.app.data.remote.dto.WorkoutEnvelopeDto
+import com.reprise.app.data.remote.dto.WorkoutListDto
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
@@ -83,4 +88,45 @@ interface RepRiseApi {
     /** Deletes an entry. The server answers 204 No Content, hence `Response<Unit>`. */
     @DELETE("api/weights/{id}")
     suspend fun deleteWeight(@Path("id") id: String): Response<Unit>
+
+    // --- Workout logging (Phase 4) ------------------------------------------
+
+    /**
+     * Workout history, newest first, already converted into the user's preferred
+     * unit.
+     *
+     * @param days  only include sessions from the last N days
+     * @param limit maximum number of workouts to return
+     */
+    @GET("api/workouts")
+    suspend fun workoutHistory(
+        @Query("days") days: Int? = null,
+        @Query("limit") limit: Int? = null,
+    ): Response<WorkoutListDto>
+
+    /**
+     * The distinct exercise names this user has logged before, alphabetically.
+     *
+     * Declared before `:id` on the server, so "exercises" is never mistaken for
+     * an id.
+     */
+    @GET("api/workouts/exercises")
+    suspend fun exerciseCatalogue(): Response<ExerciseCatalogueDto>
+
+    @GET("api/workouts/{id}")
+    suspend fun getWorkout(@Path("id") id: String): Response<WorkoutEnvelopeDto>
+
+    @POST("api/workouts")
+    suspend fun createWorkout(@Body body: CreateWorkoutRequest): Response<WorkoutEnvelopeDto>
+
+    /** Replaces the whole exercise list when one is supplied. */
+    @PATCH("api/workouts/{id}")
+    suspend fun updateWorkout(
+        @Path("id") id: String,
+        @Body body: UpdateWorkoutRequest,
+    ): Response<WorkoutEnvelopeDto>
+
+    /** Deletes a workout. The server answers 204 No Content. */
+    @DELETE("api/workouts/{id}")
+    suspend fun deleteWorkout(@Path("id") id: String): Response<Unit>
 }

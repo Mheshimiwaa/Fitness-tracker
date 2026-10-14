@@ -50,7 +50,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | Dashboard summary with honest empty states | ✅ Phase 3 |
 | Body-weight tracking (CRUD, kg/lb, history, chart, period change) | ✅ Phase 3 |
 | BMI from latest weight + height, with adult categories & disclaimers | ✅ Phase 3 |
-| Workout logging (workout → exercises → sets of weight × reps) | Planned (Phase 4) |
+| Workout logging (workout → exercises → sets of weight × reps) | ✅ Phase 4 |
 | Progressive overload comparison + rule-based suggestions | Planned (Phase 5) |
 | Friends (search, request, accept/reject, list, remove) | Planned (Phase 6) |
 | Weekly leaderboard scored on the server | Planned (Phase 6) |
@@ -188,6 +188,27 @@ DashboardUiState / WeightsUiState  (StateFlow, immutable)  ──►  Compose sc
 - The trend line is drawn with Compose's `Canvas` (`components/WeightChart.kt`) — **no charting dependency**.
 - **Unit conversion happens on the server.** A reading is stored exactly as entered (value + unit) and converted to the user's *current* preferred unit when read, so changing kg ⇄ lb never rewrites history.
 
+### Android request flow (Phase 4 — workout logging)
+
+```
+Workouts tab                          Workout editor (pushed)
+   │  LaunchedEffect(Unit)                │  LaunchedEffect(workoutId) { load() }
+   ▼                                      ▼
+WorkoutsViewModel  (list + delete)     WorkoutEditorViewModel  (draft, validate, save)
+   │  history() / deleteWorkout()         │  workout() / addWorkout() / updateWorkout()
+   ▼                                      ▼
+WorkoutRepository ── maps DTOs ⇄ domain models ──► Retrofit ──► OkHttp
+   │                                                              │
+   ▼                                                              ▼
+WorkoutsUiState / WorkoutEditorUiState  (StateFlow)   exercises catalogue (suggestion chips)
+```
+
+- The editor's form state lives in the **ViewModel**, not in `remember`, so rotating the device does not lose a half-typed session.
+- Validation is split: the obvious mistakes are caught client-side for instant feedback (`parseWorkoutDraft`, a **pure function** so it is unit-tested without a device), while the server stays the authority on plausible loads and its message wins.
+- `PATCH` sends the **complete** workout and models its fields with no defaults, so `null` is encoded rather than skipped — that is what makes "clear the duration/note" possible.
+- Tapping a session opens the same editor route with its id; `"new"` is the route argument that means "log a new workout".
+- Volume (`totalVolumeKg`) is always shown in **kg** — it is a cross-session comparison figure, not a body weight with a chosen unit.
+
 ---
 
 ## Repository structure
@@ -216,19 +237,21 @@ reprise/
 │               ├── di/AppModule.kt        # hand-written service locator
 │               ├── navigation/            # RepRiseApp (auth gate), MainScaffold,
 │               │                          # AuthNavHost, destinations
-│               ├── domain/model/          # User, AuthState, ThemeMode, Weight, enums
+│               ├── domain/model/          # User, AuthState, ThemeMode, Weight, Workout, enums
 │               ├── data/
 │               │   ├── remote/            # RepRiseApi, ApiClient, AuthInterceptor,
 │               │   │                      # ApiResult + ApiCall (error parsing), dto/
 │               │   ├── local/             # TokenStore (encrypted), SettingsStore
 │               │   └── repository/        # AuthRepository (session source of truth),
-│               │                          # WeightRepository (weight + dashboard)
-│               ├── util/                  # Formatting (ISO dates, kg/lb numbers)
+│               │                          # WeightRepository (weight + dashboard),
+│               │                          # WorkoutRepository (workout logging)
+│               ├── util/                  # Formatting (ISO dates, kg/lb numbers, volume)
 │               ├── ui/theme/              # Color, Type, Theme, SettingsViewModel
 │               ├── ui/auth/               # LoginScreen, RegisterScreen, AuthViewModel
 │               ├── ui/home/               # HomeScreen (dashboard) + DashboardViewModel
 │               ├── ui/weights/            # WeightsScreen + WeightsViewModel
-│               ├── ui/{workouts,friends,profile}/…
+│               ├── ui/workouts/           # WorkoutsScreen, WorkoutEditorScreen + ViewModels
+│               ├── ui/{friends,profile}/…
 │               └── components/            # reusable Compose widgets (ScreenContainer,
 │                                          # DetailScreen, RepRiseCard, WeightChart, …)
 └── backend/
@@ -243,16 +266,18 @@ reprise/
     │   ├── database/                      # connection, collections, indexes
     │   ├── middleware/                    # requestLogger, notFound, errorHandler,
     │   │                                  # authenticate, validate, rateLimiter
-    │   ├── routes/                        # index, health, auth, users, weights, dashboard
-    │   ├── controllers/                   # auth, users, weights, dashboard
-    │   ├── services/                      # auth, user, weight, bmi, dashboard
-    │   ├── validators/                    # common.fields, auth, user, weight (Zod)
+    │   ├── routes/                        # index, health, auth, users, weights,
+    │   │                                  # dashboard, workouts
+    │   ├── controllers/                   # auth, users, weights, workouts, dashboard
+    │   ├── services/                      # auth, user, weight, workout, bmi, dashboard
+    │   ├── validators/                    # common.fields, auth, user, weight, workout (Zod)
     │   └── utils/                         # logger, ApiError, password, token, units
     └── tests/
         ├── helpers/                       # setup, app, db (shared test utilities)
         ├── health.test.js
         ├── auth.test.js
-        └── weights.test.js
+        ├── weights.test.js
+        └── workouts.test.js
 ```
 
 ---
@@ -469,7 +494,7 @@ PATCH /api/weights/:id  { weight?, unit?, measuredAt?, note? }
 DELETE /api/weights/:id
                      -> 204 (no body)
 GET   /api/dashboard
-                     -> 200 { weight:{latest,previous,entryCount,changeWindowDays,change}, bmi, bmiUnavailableReason }
+                     -> 200 { weight:{...}, workouts:{...}, bmi, bmiUnavailableReason }
 ```
 
 A weight entry looks like this on the wire:
@@ -493,19 +518,80 @@ Rules enforced by the server:
 - `change` is `null` (not a misleading `0`) when the window holds fewer than two readings.
 - `bmi` is `null` when it cannot be computed, and `bmiUnavailableReason` is `"no_height"` or `"no_weight"`, so the app can say what is missing instead of showing a fake number.
 
-### Planned (Phases 4–7)
+### Implemented (Phase 4 — workout logging)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/workouts` | yes | log a workout (`201`) |
+| GET | `/api/workouts?days=&limit=&order=` | yes | my sessions, newest first |
+| GET | `/api/workouts/exercises` | yes | distinct exercise names I have logged (editor suggestions) |
+| GET | `/api/workouts/:id` | yes | read one workout |
+| PATCH | `/api/workouts/:id` | yes | edit a workout (`exercises` **replaces** the list) |
+| DELETE | `/api/workouts/:id` | yes | delete a workout (`204`) |
+
+**Workout flow**
+
+```
+POST  /api/workouts
+      { name, workoutDate?, durationMinutes?, notes?,
+        exercises:[{ name, unit?, restSeconds?, notes?, sets:[{ reps, weight }] }] }
+                        -> 201 { workout }
+GET   /api/workouts?days=7&limit=50
+                        -> 200 { workouts, count, days }
+GET   /api/workouts/exercises
+                        -> 200 { exercises }   // ["Barbell Row", "Bench Press", ...]
+GET   /api/workouts/:id -> 200 { workout }
+PATCH /api/workouts/:id -> 200 { workout }
+DELETE /api/workouts/:id-> 204 (no body)
+```
+
+A workout looks like this on the wire:
+
+```json
+{
+  "id": "6acf3e75fc7b216d6e75b330",
+  "name": "Push day",
+  "workoutDate": "2026-10-14T08:33:57.367Z",
+  "durationMinutes": 52,
+  "notes": "felt strong",
+  "exercises": [
+    {
+      "name": "Bench Press",
+      "unit": "kg",               // the unit the weights below are shown in
+      "restSeconds": 120,
+      "notes": null,
+      "sets": [
+        { "reps": 8, "weight": 60, "weightKg": 60 },
+        { "reps": 6, "weight": 65, "weightKg": 65 }
+      ]
+    }
+  ],
+  "summary": { "exerciseCount": 1, "setCount": 2, "totalReps": 14, "totalVolumeKg": 870 },
+  "createdAt": "2026-10-14T08:35:10.000Z",
+  "updatedAt": "2026-10-14T08:35:10.000Z"
+}
+```
+
+Rules enforced by the server:
+- A workout is the tree `workouts → exercises[] → sets[]`; each set is `{ reps, weight }`, and the weight belongs to its **exercise's `unit`**.
+- `summary` is **derived on every read** (never stored) so it cannot drift: `totalVolumeKg` = Σ `weight × reps`, converted to kilograms.
+- `unit` is optional per exercise and defaults to the user's preferred unit. Reads convert each set to the user's *current* unit and also expose the canonical `weightKg`.
+- Loads must be plausible for the unit (≤ 1000 kg / 2205 lb). The exact per-unit check runs in the **service**, and its `400` names the offending set (e.g. `exercises.0.sets.1.weight`). `reps` is 1–1000, and `weight` may be `0` for bodyweight/assisted sets.
+- `workoutDate` may be back-dated but not set in the future; durations are 1–600 minutes.
+- On `PATCH`, supplying `exercises` **replaces the whole list**, and an explicit `null` for `durationMinutes` or `notes` **clears** that field (so a value can be removed, not just changed).
+- Ownership is enforced inside the query (`{ _id, userId }`), so another user's workout is a `404` — the same response as a non-existent id.
+- `GET /api/dashboard` gained a `workouts` section: `{ totalCount, recentCount, recentDays, recentVolumeKg, lastWorkoutAt }` where "recent" is a **rolling** 7-day window (not a calendar week).
+
+### Planned (Phases 5–7)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST/GET | `/api/workouts` | yes | create / list workouts |
-| GET/PATCH/DELETE | `/api/workouts/:id` | yes | read / update / delete a workout |
-| GET | `/api/workouts/:id/progression` | yes | progression vs. the previous session |
+| GET | `/api/workouts/:id/progression` | yes | progression vs. the previous session (rule-based) |
 | POST | `/api/friends/requests` | yes | send a friend request |
 | GET/PATCH | `/api/friends/requests[/:id]` | yes | list / accept / reject requests |
 | GET/DELETE | `/api/friends[/:id]` | yes | list / remove friends |
 | GET | `/api/leaderboard/weekly` | yes | weekly friends leaderboard |
 
-> `GET /api/dashboard` already exists and will simply gain new sections (workouts, streak, leaderboard) as Phases 4–7 land — the app never has to be rewired.
+> `GET /api/dashboard` simply gains new sections (progression, streak, leaderboard) as Phases 5–7 land — the app never has to be rewired.
 
 **Error shape** (every failure):
 
@@ -531,6 +617,7 @@ Body-weight history. `_id`, `userId`, `weight`, `unit`, `measuredAt`, `note?`, `
 ### `workouts`
 Workout sessions with embedded exercises and sets.
 `_id`, `userId`, `name`, `workoutDate`, `durationMinutes?`, `notes?`, `exercises[]{ name, unit, restSeconds?, notes?, sets[]{ reps, weight } }`, `createdAt`, `updatedAt`.
+*The `summary` (exercise/set/reps counts, `totalVolumeKg`) is **not stored** — it is derived on every read, so it can never drift from the sets it describes.*
 
 ### `friendships`
 One row per relationship. `_id`, `requesterId`, `recipientId`, `status` (`pending`|`accepted`|`rejected`), `createdAt`, `updatedAt`.
@@ -542,6 +629,7 @@ One row per relationship. `_id`, `requesterId`, `recipientId`, `status` (`pendin
 | `users` | `emailNormalized` **unique** | emails are unique, case-insensitively |
 | `weight_entries` | `{ userId: 1, measuredAt: -1 }` | "my weight history, newest first" |
 | `workouts` | `{ userId: 1, workoutDate: -1 }` | "my workout history, newest first" |
+| `workouts` | `{ userId: 1, 'exercises.name': 1, workoutDate: -1 }` (`user_exercise_recent`) | one exercise's history for the progressive-overload comparison (Phase 5) |
 | `friendships` | `{ requesterId: 1, status: 1 }` | requests I sent / my friendships |
 | `friendships` | `{ recipientId: 1, status: 1 }` | requests I received |
 
@@ -560,13 +648,14 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **39 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **63 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
 - **Phase 3** — weight schemas (per-unit range, future/back-dated timestamps, empty update bodies), `401` on every weight route, create/list/latest/read/update/delete, unit conversion after a preference change, ownership isolation (another user gets `404` and the owner's entry is untouched), BMI from height + latest weight, `bmiUnavailableReason`, and the 30-day change.
+- **Phase 4** — workout schemas (nested exercises/sets, plausible loads, future dates, clearing a duration/note with an explicit `null`, empty update bodies), `401` on every workout route, create with a derived `summary`, the per-unit load check naming the exact set, the distinct-exercise catalogue, list/read/update (including replacing the exercise list)/delete, ownership isolation, and the dashboard's rolling training totals.
 
-> **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix`), so no orphaned weight entries accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
+> **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries and workouts), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
 **Android**
 
@@ -576,7 +665,7 @@ cd android
 ./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
 
-The JVM suite (**36 tests**) covers the parts where a mistake is invisible until
+The JVM suite (**58 tests**) covers the parts where a mistake is invisible until
 runtime:
 
 - **`ApiCallTest`** — every shape the API can answer with: a successful response,
@@ -592,10 +681,20 @@ runtime:
   the theme-mode resolution.
 - **`WeightRepositoryTest`** — drives a hand-written fake `RepRiseApi` to prove the
   DTO ⇄ domain mapping: values, unit codes, the canonical `weightKg`, the BMI
-  category, a `null` change, the delete path, and that a rejection passes through
-  with the server's message intact.
+  category, a `null` change, the dashboard's training section, the delete path,
+  and that a rejection passes through with the server's message intact.
+- **`WorkoutRepositoryTest`** — the same fake-API technique for the workout tree:
+  exercises → sets, the display weight *and* the canonical `weightKg`, the derived
+  summary, the `days`/`limit` query, the exercise catalogue, the request bodies the
+  editor produces, and — as its own test — that a `null` duration/note really is
+  **encoded** (not dropped) so a field can be cleared.
+- **`WorkoutDraftParseTest`** — the editor's validation rules, which live in a pure
+  function (`parseWorkoutDraft`) precisely so they can be tested without a device:
+  blank names, reps/weights, "0 kg is fine but −5 is not", a comma decimal
+  separator, a blank vs. nonsense duration, and the no-exercises case.
 - **`FormattingTest`** — ISO-8601 parsing, checked against `java.time.Instant` as
-  an independent oracle, plus the signed one-decimal weight formatting.
+  an independent oracle, plus signed weight formatting, the editable-number
+  helper (no floating-point noise leaking into a form), and volume grouping.
 
 **Manual API check (Postman or curl)**
 
@@ -632,7 +731,7 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 
 ## Professor demonstration procedure
 
-The full sequence below is the target for Phase 7. **Currently steps 1–6 are runnable, in the app itself.**
+The full sequence below is the target for Phase 7. **Currently steps 1–7 are runnable, in the app itself.**
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
 2. Register a new user in the app → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅
@@ -640,8 +739,8 @@ The full sequence below is the target for Phase 7. **Currently steps 1–6 are r
 4. Show the errors the app surfaces (wrong password, duplicate username, weak password), sign out, then sign back in — close and reopen the app to prove the session is remembered. ✅
 5. Log a body weight from the **Weight** screen (Home → *Log weight*) → show the matching `weight_entries` document in Atlas. ✅
 6. Switch the units in the API to pounds (`PATCH /api/users/me {"weightUnit":"lb"}`) and reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Set a height and show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer. ✅
-7. Create a workout with several exercises and sets → show the `workouts` document.
-8. Log a second session and demonstrate the progressive-overload comparison.
+7. Create a workout from the **Workouts** tab (*Log workout*): name it, add an exercise with several sets, and save → show the nested `workouts` document in Atlas, and the derived `summary` on the card. Edit it, then delete it. ✅
+8. Log a second session for the same exercise and demonstrate the progressive-overload comparison.
 9. Register a second test account, send and accept a friend request → show the `friendships` document.
 10. Complete qualifying workouts and show how the weekly leaderboard score is computed.
 11. Explain the architecture, REST API, schema, authentication and scoring rules.
@@ -666,7 +765,7 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 | 1 | Repo, Android project, Express backend, MongoDB connection, env vars, health check | ✅ **complete & verified** |
 | 2 | Auth (register/login/JWT), Compose theme, navigation, profile model | ✅ **complete & verified** (backend + Android auth screens, session restore, profile, theme) |
 | 3 | Dashboard, weight tracking, BMI, chart | ✅ **complete & verified** (backend + Home tab, Weight screen, trend chart) |
-| 4 | Workout logging (exercises + sets) | ⏳ |
+| 4 | Workout logging (exercises + sets) | ✅ **complete & verified** (backend + Workouts tab, workout editor, Home training card) |
 | 5 | Progressive overload + unit tests | ⏳ |
 | 6 | Friends + weekly leaderboard | ⏳ |
 | 7 | Streaks, settings, polish, demo prep | ⏳ |
@@ -675,10 +774,12 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 
 ## Known limitations & future improvements
 
-- **Phases 1–3 complete** — authentication, profiles, body-weight tracking, BMI and the dashboard work end to end. The Workouts and Friends tabs are still honest placeholders until Phases 4–6.
+- **Phases 1–4 complete** — authentication, profiles, body-weight tracking, BMI, the dashboard, and workout logging work end to end. The Friends tab is still an honest placeholder until Phase 6.
 - The only profile field editable in the app is the **display name**; goal, unit and height can be changed through `PATCH /api/users/me` and get their UI in Phase 7. This means the BMI card prompts you to *"add your height in your profile"* while there is currently no in-app field for it.
-- Weight entries are logged with the **current time** in the app (the common case). Back-dating a weigh-in is supported by the API (`measuredAt`) and documented above, but has no date picker in the UI yet.
-- The weight history list is capped at the server's default page (100 entries); older entries are still counted in "All time" totals and can be paged through the API, but the app does not paginate yet.
+- Weight entries and workouts are logged with the **current time** in the app (the common case). Back-dating is supported by the API (`measuredAt` / `workoutDate`) and documented above, but has no date picker in the UI yet.
+- A workout's **training volume is always shown in kilograms**. It is a figure for comparing sessions across units, not a body weight the user chose a unit for, so it is deliberately not converted. Per-set weights *are* converted to the preferred unit.
+- The workout editor does not offer a per-exercise **unit picker**: new sets are entered in the user's preferred unit (the server defaults and converts). Exercises that were originally logged in another unit are shown in the preferred unit and saved back in it.
+- The weight history list is capped at the server's default page (100 entries); older entries are still counted in "All time" totals and can be paged through the API, but the app does not paginate yet. The Workouts list shows the 50 most recent sessions.
 - Session tokens are **stateless JWTs with no server-side revocation list**, so logout clears the token locally. Acceptable for a single-device demo; production would add refresh/revocation.
 - Leaderboard scoring, streaks and progressive overload are all **recomputed on demand** (no cached snapshots). Fine for an MVP; a snapshot collection could be added if leaderboards grow large.
 - BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.

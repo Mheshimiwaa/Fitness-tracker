@@ -5,19 +5,25 @@ import com.reprise.app.data.remote.RepRiseApi
 import com.reprise.app.data.remote.dto.AuthResponseDto
 import com.reprise.app.data.remote.dto.BmiDto
 import com.reprise.app.data.remote.dto.CreateWeightRequest
+import com.reprise.app.data.remote.dto.CreateWorkoutRequest
 import com.reprise.app.data.remote.dto.DashboardDto
 import com.reprise.app.data.remote.dto.DashboardWeightDto
+import com.reprise.app.data.remote.dto.DashboardWorkoutsDto
+import com.reprise.app.data.remote.dto.ExerciseCatalogueDto
 import com.reprise.app.data.remote.dto.LatestWeightEnvelopeDto
 import com.reprise.app.data.remote.dto.LoginRequest
 import com.reprise.app.data.remote.dto.RegisterRequest
 import com.reprise.app.data.remote.dto.UpdateProfileRequest
 import com.reprise.app.data.remote.dto.UpdateWeightRequest
+import com.reprise.app.data.remote.dto.UpdateWorkoutRequest
 import com.reprise.app.data.remote.dto.UserEnvelopeDto
 import com.reprise.app.data.remote.dto.WeightChangeDto
 import com.reprise.app.data.remote.dto.WeightEntryDto
 import com.reprise.app.data.remote.dto.WeightEntryEnvelopeDto
 import com.reprise.app.data.remote.dto.WeightHistoryDto
 import com.reprise.app.data.remote.dto.WeightPointDto
+import com.reprise.app.data.remote.dto.WorkoutEnvelopeDto
+import com.reprise.app.data.remote.dto.WorkoutListDto
 import com.reprise.app.domain.model.BmiCategory
 import com.reprise.app.domain.model.BmiUnavailableReason
 import com.reprise.app.domain.model.WeightUnit
@@ -25,6 +31,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -116,6 +123,32 @@ class WeightRepositoryTest {
         assertEquals(WeightUnit.LB, dashboard.latestWeight!!.unit)
         // The canonical kilograms must survive untouched.
         assertEquals(82.4, dashboard.latestWeight!!.weightKg, 0.0001)
+    }
+
+    @Test
+    fun `the dashboard carries the training section`() = runBlocking {
+        val api = FakeApi(
+            dashboardResponse = Response.success(
+                DashboardDto(
+                    workouts = DashboardWorkoutsDto(
+                        totalCount = 12,
+                        recentCount = 3,
+                        recentDays = 7,
+                        recentVolumeKg = 1982.0,
+                        lastWorkoutAt = "2026-10-14T08:33:57.367Z",
+                    )
+                )
+            )
+        )
+
+        val stats = (WeightRepository(api).dashboard() as ApiResult.Success).data.workouts
+
+        assertEquals(12, stats.totalCount)
+        assertEquals(3, stats.recentCount)
+        assertEquals(7, stats.recentDays)
+        assertEquals(1982.0, stats.recentVolumeKg, 0.0001)
+        assertEquals("2026-10-14T08:33:57.367Z", stats.lastWorkoutAt)
+        assertFalse(stats.isEmpty)
     }
 
     @Test
@@ -319,4 +352,27 @@ private class FakeApi(
 
     override suspend fun updateProfile(body: UpdateProfileRequest): Response<UserEnvelopeDto> =
         throw NotImplementedError("updateProfile is not used by WeightRepository")
+
+    // --- Workouts (handled by WorkoutRepositoryTest) -------------------------
+
+    override suspend fun workoutHistory(days: Int?, limit: Int?): Response<WorkoutListDto> =
+        throw NotImplementedError("workoutHistory is not used by WeightRepository")
+
+    override suspend fun exerciseCatalogue(): Response<ExerciseCatalogueDto> =
+        throw NotImplementedError("exerciseCatalogue is not used by WeightRepository")
+
+    override suspend fun getWorkout(id: String): Response<WorkoutEnvelopeDto> =
+        throw NotImplementedError("getWorkout is not used by WeightRepository")
+
+    override suspend fun createWorkout(body: CreateWorkoutRequest): Response<WorkoutEnvelopeDto> =
+        throw NotImplementedError("createWorkout is not used by WeightRepository")
+
+    override suspend fun updateWorkout(
+        id: String,
+        body: UpdateWorkoutRequest,
+    ): Response<WorkoutEnvelopeDto> =
+        throw NotImplementedError("updateWorkout is not used by WeightRepository")
+
+    override suspend fun deleteWorkout(id: String): Response<Unit> =
+        throw NotImplementedError("deleteWorkout is not used by WeightRepository")
 }

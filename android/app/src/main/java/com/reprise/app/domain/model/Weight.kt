@@ -49,6 +49,7 @@ data class Dashboard(
     val weightEntryCount: Int,
     val changeWindowDays: Int,
     val weightChange: WeightChange?,
+    val workouts: WorkoutStats,
     val bmi: Bmi?,
     val bmiUnavailableReason: BmiUnavailableReason?,
 )

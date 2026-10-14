@@ -138,9 +138,13 @@ const createWorkoutSchema = z.object({
 /**
  * PATCH /api/workouts/:id
  *
- * At least one field must be present; an empty body is a client bug. Supplying
- * `exercises` REPLACES the whole list — the editor always sends the complete
- * list it is showing, so a merge would only invite surprises.
+ * At least one field must be present; an empty body is a client bug.
+ *
+ * Supplying `exercises` REPLACES the whole list — the editor always sends the
+ * complete list it is showing, so a merge would only invite surprises.
+ *
+ * `durationMinutes` and `notes` additionally accept an explicit `null`, which
+ * CLEARS them. Without that, a field could be set but never removed.
  */
 const updateWorkoutSchema = z
   .object({
@@ -153,8 +157,8 @@ const updateWorkoutSchema = z
       })
       .optional(),
     workoutDate: workoutDateField.optional(),
-    durationMinutes: durationField.optional(),
-    notes: optionalNote(WORKOUT_NOTES_MAX_LENGTH, 'Note').optional(),
+    durationMinutes: durationField.nullable().optional(),
+    notes: optionalNote(WORKOUT_NOTES_MAX_LENGTH, 'Note').nullable().optional(),
     exercises: exercisesField.optional(),
   })
   .superRefine((data, ctx) => {

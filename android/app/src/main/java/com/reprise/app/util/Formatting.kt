@@ -92,3 +92,28 @@ fun formatSignedWeight(
     val sign = if (value > 0) "+" else if (value < 0) "-" else ""
     return sign + formatted
 }
+
+/**
+ * Format a number for a text FIELD the user will edit: "60" rather than
+ * "60.0", and "62.5" rather than "62.50000000000001".
+ *
+ * Always uses [Locale.US] so the decimal point is a "." — the value is parsed
+ * back with the same assumption, and a locale that wrote "62,5" would otherwise
+ * be ambiguous.
+ */
+fun formatEditableNumber(value: Double, decimals: Int = 1): String {
+    if (!value.isFinite()) return ""
+    var text = String.format(Locale.US, "%.${decimals}f", value)
+    if (text.contains('.')) text = text.trimEnd('0').trimEnd('.')
+    return text
+}
+
+/**
+ * Format a training volume in whole kilograms with thousands separators, e.g.
+ * "1,982".
+ *
+ * Volume (reps x weight, summed) is always expressed in kilograms because it is
+ * a figure for COMPARING sessions, not a body weight the user chose a unit for.
+ */
+fun formatVolume(value: Double, locale: Locale = Locale.getDefault()): String =
+    String.format(locale, "%,.0f", value)

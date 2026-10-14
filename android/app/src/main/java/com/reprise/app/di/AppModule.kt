@@ -6,6 +6,7 @@ import com.reprise.app.data.local.TokenStore
 import com.reprise.app.data.remote.ApiClient
 import com.reprise.app.data.repository.AuthRepository
 import com.reprise.app.data.repository.WeightRepository
+import com.reprise.app.data.repository.WorkoutRepository
 
 /**
  * A tiny hand-written dependency container ("service locator").
@@ -33,6 +34,9 @@ object AppModule {
     lateinit var weightRepository: WeightRepository
         private set
 
+    lateinit var workoutRepository: WorkoutRepository
+        private set
+
     /** Called from [com.reprise.app.RepRiseApplication]. Safe to call twice. */
     fun init(context: Context) {
         if (initialized) return
@@ -45,6 +49,7 @@ object AppModule {
         val api = ApiClient.create(tokenStore)
         authRepository = AuthRepository(api = api, tokenStore = tokenStore)
         weightRepository = WeightRepository(api = api)
+        workoutRepository = WorkoutRepository(api = api)
 
         initialized = true
     }

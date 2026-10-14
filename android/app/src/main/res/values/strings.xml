@@ -140,4 +140,62 @@
     <string name="bmi_overweight_desc">Above the WHO normal range</string>
     <string name="bmi_obese">Obese</string>
     <string name="bmi_obese_desc">Within the WHO obese range</string>
+
+    <!-- Workouts tab -->
+    <string name="workouts_log_button">Log workout</string>
+    <string name="workouts_minutes">%1$d min</string>
+    <string name="workouts_volume">%1$s kg lifted</string>
+    <string name="workouts_delete_title">Delete this workout?</string>
+    <string name="workouts_delete_message">This session will be removed permanently.</string>
+
+    <!-- Workout editor -->
+    <string name="workout_editor_new_title">Log workout</string>
+    <string name="workout_editor_edit_title">Edit workout</string>
+    <string name="workout_field_name">Workout name</string>
+    <string name="workout_field_name_hint">e.g. Push day</string>
+    <string name="workout_field_duration">Duration in minutes (optional)</string>
+    <string name="workout_field_notes">Notes (optional)</string>
+    <string name="workout_field_notes_hint">How did it feel?</string>
+    <string name="workout_field_exercise_name">Exercise</string>
+    <string name="workout_field_exercise_hint">e.g. Bench Press</string>
+    <string name="workout_exercise_label">Exercise %1$d</string>
+    <string name="workout_sets_title">Sets</string>
+    <string name="workout_set_reps">Reps</string>
+    <string name="workout_set_weight">Weight (%1$s)</string>
+    <string name="workout_add_set">Add set</string>
+    <string name="workout_remove_set">Remove set</string>
+    <string name="workout_add_exercise">Add exercise</string>
+    <string name="workout_remove_exercise">Remove exercise</string>
+    <string name="workout_suggestions">Previously logged</string>
+    <string name="workout_error_name">Give this workout a name.</string>
+    <string name="workout_error_no_exercises">Add at least one exercise.</string>
+    <string name="workout_error_duration">Enter a whole number of minutes.</string>
+    <string name="workout_error_exercise_name">Name this exercise.</string>
+    <string name="workout_error_reps">Enter whole reps.</string>
+    <string name="workout_error_weight">Enter a weight.</string>
+
+    <!-- Dashboard (Home): recent training -->
+    <string name="home_workouts_title">Training</string>
+    <string name="home_workouts_recent_label">Last %1$d days</string>
+    <string name="home_workouts_total_label">Logged in total</string>
+    <string name="home_workouts_last_label">Last session</string>
+    <string name="home_workouts_volume_label">Volume (kg)</string>
+    <string name="home_workouts_none_title">No workouts yet</string>
+    <string name="home_workouts_none_message">Log your first session to start tracking your training.</string>
+    <string name="home_action_log_workout">Log workout</string>
+    <string name="home_action_view_workouts">View workouts</string>
+
+    <!-- Counted nouns. Using plurals means "1 set" never reads "1 sets". -->
+    <plurals name="workouts_count">
+        <item quantity="one">%1$d session</item>
+        <item quantity="other">%1$d sessions</item>
+    </plurals>
+    <plurals name="workout_exercises">
+        <item quantity="one">%1$d exercise</item>
+        <item quantity="other">%1$d exercises</item>
+    </plurals>
+    <plurals name="workout_sets">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d sets</item>
+    </plurals>
 </resources>

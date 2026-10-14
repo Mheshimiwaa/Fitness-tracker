@@ -86,4 +86,21 @@ class FormattingTest {
         // Zero is neither a gain nor a loss, so it carries no sign.
         assertEquals("0.0", formatSignedWeight(0.0, locale = Locale.US))
     }
+
+    @Test
+    fun `an editable number drops a pointless decimal point`() {
+        // Prefilling a form with "60.0" looks like noise; "60" does not.
+        assertEquals("60", formatEditableNumber(60.0))
+        assertEquals("62.5", formatEditableNumber(62.5))
+        assertEquals("100", formatEditableNumber(100.0))
+        // Floating point noise must not leak into the field.
+        assertEquals("82.4", formatEditableNumber(82.40000000000001))
+    }
+
+    @Test
+    fun `volume is a whole number of kilograms with grouping`() {
+        assertEquals("1,982", formatVolume(1982.0, locale = Locale.US))
+        assertEquals("0", formatVolume(0.0, locale = Locale.US))
+        assertEquals("12,345", formatVolume(12345.4, locale = Locale.US))
+    }
 }

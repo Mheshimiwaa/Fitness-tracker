@@ -103,6 +103,7 @@ data class BmiDto(
 @Serializable
 data class DashboardDto(
     val weight: DashboardWeightDto = DashboardWeightDto(),
+    val workouts: DashboardWorkoutsDto = DashboardWorkoutsDto(),
     val bmi: BmiDto? = null,
     val bmiUnavailableReason: String? = null,
 )

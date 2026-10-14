@@ -2,6 +2,7 @@ package com.reprise.app.ui.home
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,16 +43,19 @@ import com.reprise.app.domain.model.User
 import com.reprise.app.domain.model.WeightChange
 import com.reprise.app.domain.model.WeightEntry
 import com.reprise.app.domain.model.WeightUnit
+import com.reprise.app.domain.model.WorkoutStats
 import com.reprise.app.ui.theme.RepRiseTheme
 import com.reprise.app.util.formatShortDate
 import com.reprise.app.util.formatSignedWeight
+import com.reprise.app.util.formatVolume
 import com.reprise.app.util.formatWeight
 
 /**
  * Home / Dashboard.
  *
  * Shows the signed-in user a real summary loaded from `GET /api/dashboard`:
- * their latest body weight, the change over the last 30 days, and their BMI.
+ * their latest body weight, the change over the last 30 days, their BMI, and how
+ * much they have been training.
  *
  * Every number here comes from the server — there is no fabricated data, and
  * empty sections explain what to do next rather than showing a fake value.
@@ -60,6 +64,8 @@ import com.reprise.app.util.formatWeight
 fun HomeScreen(
     user: User,
     onOpenWeights: () -> Unit,
+    onOpenWorkouts: () -> Unit,
+    onLogWorkout: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: DashboardViewModel = viewModel(factory = DashboardViewModel.Factory),
 ) {
@@ -91,6 +97,11 @@ fun HomeScreen(
             null -> LoadingCards()
             else -> {
                 WeightCard(dashboard = dashboard, onOpenWeights = onOpenWeights)
+                TrainingCard(
+                    dashboard = dashboard,
+                    onOpenWorkouts = onOpenWorkouts,
+                    onLogWorkout = onLogWorkout,
+                )
                 BmiCard(dashboard = dashboard)
             }
         }
@@ -241,6 +252,105 @@ private fun ChangeLine(dashboard: Dashboard) {
     }
 }
 
+/**
+ * How much the user has been training.
+ *
+ * "Last N days" is a ROLLING window from the server, not a calendar week, so a
+ * Monday morning does not look like a failure just because the week is new.
+ *
+ * Volume is shown in kilograms because it is a cross-session comparison figure,
+ * not a body weight the user picked a unit for.
+ */
+@Composable
+private fun TrainingCard(
+    dashboard: Dashboard,
+    onOpenWorkouts: () -> Unit,
+    onLogWorkout: () -> Unit,
+) {
+    val stats = dashboard.workouts
+
+    RepRiseCard {
+        CardHeader(
+            title = stringResource(R.string.home_workouts_title),
+            leading = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_workouts),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            },
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        if (stats.isEmpty) {
+            Text(
+                text = stringResource(R.string.home_workouts_none_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.home_workouts_none_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                StatColumn(
+                    label = stringResource(R.string.home_workouts_recent_label, stats.recentDays),
+                    value = stats.recentCount.toString(),
+                )
+                StatColumn(
+                    label = stringResource(R.string.home_workouts_total_label),
+                    value = stats.totalCount.toString(),
+                )
+                StatColumn(
+                    label = stringResource(R.string.home_workouts_volume_label),
+                    value = formatVolume(stats.recentVolumeKg),
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            stats.lastWorkoutAt?.let { last ->
+                Text(
+                    text = "${stringResource(R.string.home_workouts_last_label)}: " +
+                        formatShortDate(last),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onLogWorkout) {
+                Text(text = stringResource(R.string.home_action_log_workout))
+            }
+            if (!stats.isEmpty) {
+                OutlinedButton(onClick = onOpenWorkouts) {
+                    Text(text = stringResource(R.string.home_action_view_workouts))
+                }
+            }
+        }
+    }
+}
+
+/** One big number with a small caption underneath. */
+@Composable
+private fun StatColumn(label: String, value: String) {
+    Column {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /** BMI, or an explanation of what is still missing. */
 @Composable
 private fun BmiCard(dashboard: Dashboard) {
@@ -322,13 +432,38 @@ private fun CardHeader(
     }
 }
 
+/** Build a dashboard for previews without repeating every field each time. */
+private fun previewDashboard(
+    latestWeight: WeightEntry? = null,
+    weightChange: WeightChange? = null,
+    weightEntryCount: Int = 0,
+    bmi: Bmi? = null,
+    bmiUnavailableReason: BmiUnavailableReason? = null,
+    workouts: WorkoutStats = WorkoutStats(
+        totalCount = 0,
+        recentCount = 0,
+        recentDays = 7,
+        recentVolumeKg = 0.0,
+        lastWorkoutAt = null,
+    ),
+): Dashboard = Dashboard(
+    latestWeight = latestWeight,
+    previousWeight = null,
+    weightEntryCount = weightEntryCount,
+    changeWindowDays = 30,
+    weightChange = weightChange,
+    workouts = workouts,
+    bmi = bmi,
+    bmiUnavailableReason = bmiUnavailableReason,
+)
+
 @Preview(showBackground = true)
 @Composable
 private fun HomeScreenPreview() {
     RepRiseTheme {
         ScreenContainer(title = "Hi, Alex Lifter") {
             WeightCard(
-                dashboard = Dashboard(
+                dashboard = previewDashboard(
                     latestWeight = WeightEntry(
                         id = "1",
                         weight = 82.4,
@@ -337,24 +472,27 @@ private fun HomeScreenPreview() {
                         measuredAt = "2026-10-14T08:33:57.367Z",
                         note = "morning",
                     ),
-                    previousWeight = null,
-                    weightEntryCount = 3,
-                    changeWindowDays = 30,
                     weightChange = WeightChange(amount = -2.4, unit = WeightUnit.KG),
-                    bmi = null,
-                    bmiUnavailableReason = null,
+                    weightEntryCount = 3,
                 ),
                 onOpenWeights = {},
             )
+            TrainingCard(
+                dashboard = previewDashboard(
+                    workouts = WorkoutStats(
+                        totalCount = 12,
+                        recentCount = 3,
+                        recentDays = 7,
+                        recentVolumeKg = 1982.0,
+                        lastWorkoutAt = "2026-10-14T08:33:57.367Z",
+                    ),
+                ),
+                onOpenWorkouts = {},
+                onLogWorkout = {},
+            )
             BmiCard(
-                dashboard = Dashboard(
-                    latestWeight = null,
-                    previousWeight = null,
-                    weightEntryCount = 0,
-                    changeWindowDays = 30,
-                    weightChange = null,
+                dashboard = previewDashboard(
                     bmi = Bmi(value = 25.4, category = BmiCategory.OVERWEIGHT),
-                    bmiUnavailableReason = null,
                 ),
             )
         }
@@ -366,26 +504,14 @@ private fun HomeScreenPreview() {
 private fun HomeScreenEmptyPreview() {
     RepRiseTheme {
         ScreenContainer(title = "Home") {
-            WeightCard(
-                dashboard = Dashboard(
-                    latestWeight = null,
-                    previousWeight = null,
-                    weightEntryCount = 0,
-                    changeWindowDays = 30,
-                    weightChange = null,
-                    bmi = null,
-                    bmiUnavailableReason = BmiUnavailableReason.NO_HEIGHT,
-                ),
-                onOpenWeights = {},
+            WeightCard(dashboard = previewDashboard(), onOpenWeights = {})
+            TrainingCard(
+                dashboard = previewDashboard(),
+                onOpenWorkouts = {},
+                onLogWorkout = {},
             )
             BmiCard(
-                dashboard = Dashboard(
-                    latestWeight = null,
-                    previousWeight = null,
-                    weightEntryCount = 0,
-                    changeWindowDays = 30,
-                    weightChange = null,
-                    bmi = null,
+                dashboard = previewDashboard(
                     bmiUnavailableReason = BmiUnavailableReason.NO_HEIGHT,
                 ),
             )

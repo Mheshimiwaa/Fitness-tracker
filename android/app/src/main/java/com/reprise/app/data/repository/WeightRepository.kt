@@ -19,6 +19,7 @@ import com.reprise.app.domain.model.WeightChange
 import com.reprise.app.domain.model.WeightEntry
 import com.reprise.app.domain.model.WeightHistory
 import com.reprise.app.domain.model.WeightUnit
+import com.reprise.app.domain.model.WorkoutStats
 
 /**
  * Everything the app needs to read and write body-weight data.
@@ -132,6 +133,13 @@ private fun DashboardDto.toDomain(): Dashboard = Dashboard(
     weightEntryCount = weight.entryCount,
     changeWindowDays = weight.changeWindowDays,
     weightChange = weight.change?.toDomain(),
+    workouts = WorkoutStats(
+        totalCount = workouts.totalCount,
+        recentCount = workouts.recentCount,
+        recentDays = workouts.recentDays,
+        recentVolumeKg = workouts.recentVolumeKg,
+        lastWorkoutAt = workouts.lastWorkoutAt,
+    ),
     bmi = bmi?.toDomain(),
     bmiUnavailableReason = BmiUnavailableReason.fromApi(bmiUnavailableReason),
 )

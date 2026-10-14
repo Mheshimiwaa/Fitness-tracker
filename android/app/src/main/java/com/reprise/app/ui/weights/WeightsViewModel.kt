@@ -11,6 +11,7 @@ import com.reprise.app.di.AppModule
 import com.reprise.app.domain.model.WeightChange
 import com.reprise.app.domain.model.WeightEntry
 import com.reprise.app.domain.model.WeightUnit
+import com.reprise.app.util.formatEditableNumber
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -118,7 +119,7 @@ class WeightsViewModel(
                 // Prefill with the most recent reading — most people weigh in
                 // near their last value, so this saves typing.
                 weightText = _uiState.value.entries.firstOrNull()
-                    ?.let { trimTrailingZero(it.weight) }
+                    ?.let { formatEditableNumber(it.weight) }
                     .orEmpty(),
             )
         )
@@ -128,7 +129,7 @@ class WeightsViewModel(
         _uiState.value = _uiState.value.copy(
             editor = WeightEditorState(
                 entryId = entry.id,
-                weightText = trimTrailingZero(entry.weight),
+                weightText = formatEditableNumber(entry.weight),
                 noteText = entry.note.orEmpty(),
             )
         )
@@ -256,10 +257,4 @@ enum class WeightValidation {
     NOT_A_NUMBER,
     NOT_POSITIVE,
     SERVER,
-}
-
-/** "82.4" rather than "82.40000000000001" when prefilling the form. */
-private fun trimTrailingZero(value: Double): String {
-    val rounded = Math.round(value * 10.0) / 10.0
-    return if (rounded % 1.0 == 0.0) rounded.toInt().toString() else rounded.toString()
 }

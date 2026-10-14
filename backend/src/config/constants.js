@@ -131,6 +131,17 @@ const PROGRESSION_INCREMENT_LB = 5;
 const PROGRESSION_DEFAULT_LIMIT = 10;
 const PROGRESSION_MAX_LIMIT = 50;
 
+/**
+ * Friends.
+ *
+ * A friendship is stored as ONE row per PAIR, keyed by a canonical `pairKey`
+ * (the two ids sorted and joined), so two people can never end up with a
+ * duplicate relationship — no matter who asked first, or how two concurrent
+ * requests raced. `FRIEND_LIST_MAX` caps how many rows a single list response
+ * will return; it is comfortably above any realistic friend count.
+ */
+const FRIEND_LIST_MAX = 500;
+
 module.exports = {
   FITNESS_GOALS,
   WEIGHT_UNITS,
@@ -169,4 +180,5 @@ module.exports = {
   PROGRESSION_INCREMENT_LB,
   PROGRESSION_DEFAULT_LIMIT,
   PROGRESSION_MAX_LIMIT,
+  FRIEND_LIST_MAX,
 };

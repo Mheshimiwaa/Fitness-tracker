@@ -83,6 +83,17 @@ const profileImageUrlField = z
   .url({ error: 'Profile image must be a valid URL.' })
   .max(2048, { error: 'Profile image URL is too long.' });
 
+/**
+ * A MongoDB ObjectId exactly as it appears in a URL: 24 hexadecimal characters.
+ *
+ * We check the SHAPE here so a malformed id (for example `/api/friends/requests/nope`)
+ * is a clean 400 from the validator, instead of being cast deeper down where it
+ * would either throw a 500 or turn into a confusing 404.
+ */
+const objectIdField = z
+  .string({ error: 'A valid id is required.' })
+  .regex(/^[0-9a-fA-F]{24}$/, { error: 'A valid id is required.' });
+
 module.exports = {
   usernameField,
   emailField,
@@ -92,4 +103,5 @@ module.exports = {
   weightUnitField,
   heightCmField,
   profileImageUrlField,
+  objectIdField,
 };

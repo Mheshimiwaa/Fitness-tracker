@@ -60,6 +60,13 @@ async function ensureIndexes() {
   await db
     .collection(COLLECTIONS.FRIENDSHIPS)
     .createIndex({ recipientId: 1, status: 1 }, { name: 'friendship_recipient_status' });
+  // Exactly ONE row per PAIR, enforced. `pairKey` is the two user ids sorted and
+  // joined, so it is identical for A→B and B→A; the unique index is what makes a
+  // duplicate friendship impossible even if two requests arrive at the same
+  // instant and both pass the service's "does it already exist?" check.
+  await db
+    .collection(COLLECTIONS.FRIENDSHIPS)
+    .createIndex({ pairKey: 1 }, { unique: true, name: 'uniq_friendship_pair' });
 
   logger.info('MongoDB indexes ensured.');
 }

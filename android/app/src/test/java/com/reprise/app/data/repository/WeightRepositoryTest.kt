@@ -10,15 +10,21 @@ import com.reprise.app.data.remote.dto.DashboardDto
 import com.reprise.app.data.remote.dto.DashboardWeightDto
 import com.reprise.app.data.remote.dto.DashboardWorkoutsDto
 import com.reprise.app.data.remote.dto.ExerciseCatalogueDto
+import com.reprise.app.data.remote.dto.FriendEnvelopeDto
+import com.reprise.app.data.remote.dto.FriendListDto
+import com.reprise.app.data.remote.dto.FriendRequestEnvelopeDto
+import com.reprise.app.data.remote.dto.FriendRequestsDto
 import com.reprise.app.data.remote.dto.LatestWeightEnvelopeDto
 import com.reprise.app.data.remote.dto.LoginRequest
 import com.reprise.app.data.remote.dto.ProgressionDto
 import com.reprise.app.data.remote.dto.RegisterRequest
+import com.reprise.app.data.remote.dto.SendFriendRequestRequest
 import com.reprise.app.data.remote.dto.TrackedExerciseListDto
 import com.reprise.app.data.remote.dto.UpdateProfileRequest
 import com.reprise.app.data.remote.dto.UpdateWeightRequest
 import com.reprise.app.data.remote.dto.UpdateWorkoutRequest
 import com.reprise.app.data.remote.dto.UserEnvelopeDto
+import com.reprise.app.data.remote.dto.UserSearchResultsDto
 import com.reprise.app.data.remote.dto.WeightChangeDto
 import com.reprise.app.data.remote.dto.WeightEntryDto
 import com.reprise.app.data.remote.dto.WeightEntryEnvelopeDto
@@ -385,4 +391,29 @@ private class FakeApi(
 
     override suspend fun trackedExercises(): Response<TrackedExerciseListDto> =
         throw NotImplementedError("trackedExercises is not used by WeightRepository")
+
+    // --- Friends (Phase 6a; handled by FriendRepositoryTest) -----------------
+
+    override suspend fun searchUsers(username: String): Response<UserSearchResultsDto> =
+        throw NotImplementedError("searchUsers is not used by WeightRepository")
+
+    override suspend fun sendFriendRequest(
+        body: SendFriendRequestRequest,
+    ): Response<FriendRequestEnvelopeDto> =
+        throw NotImplementedError("sendFriendRequest is not used by WeightRepository")
+
+    override suspend fun friendRequests(): Response<FriendRequestsDto> =
+        throw NotImplementedError("friendRequests is not used by WeightRepository")
+
+    override suspend fun acceptFriendRequest(id: String): Response<FriendEnvelopeDto> =
+        throw NotImplementedError("acceptFriendRequest is not used by WeightRepository")
+
+    override suspend fun deleteFriendRequest(id: String): Response<Unit> =
+        throw NotImplementedError("deleteFriendRequest is not used by WeightRepository")
+
+    override suspend fun friends(): Response<FriendListDto> =
+        throw NotImplementedError("friends is not used by WeightRepository")
+
+    override suspend fun removeFriend(userId: String): Response<Unit> =
+        throw NotImplementedError("removeFriend is not used by WeightRepository")
 }

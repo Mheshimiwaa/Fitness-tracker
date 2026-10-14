@@ -4,7 +4,7 @@ RepRise is a beginner-friendly Android fitness-tracking application built with *
 
 It lets users track body weight, calculate BMI, log strength workouts, get **progressive overload** suggestions, and compete with friends on a weekly leaderboard — inspired by Duolingo's consistency-based social motivation.
 
-> **Project status:** Phases 1–5 are complete and verified. Phase 5 adds the **progressive-overload assistant** on both sides — a rule-based `GET /api/progression` (latest session vs. the previous one: *progressing*, *holding* or *regressing*, with a plain-language suggestion), and a **Progress** screen reached from the Workouts tab. See [Implementation phases](#implementation-phases).
+> **Project status:** Phases 1–6a are complete and verified. Phase 6a adds **friends** end to end — username search, send/accept/decline/withdraw requests, the friend list and removal (`/api/users/search` and `/api/friends/*`, backed by a `friendships` collection) and a full **Friends** tab. The weekly leaderboard (Phase 6b) is next. See [Implementation phases](#implementation-phases).
 
 ---
 
@@ -52,8 +52,8 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | BMI from latest weight + height, with adult categories & disclaimers | ✅ Phase 3 |
 | Workout logging (workout → exercises → sets of weight × reps) | ✅ Phase 4 |
 | Progressive overload comparison + rule-based suggestions | ✅ Phase 5 |
-| Friends (search, request, accept/reject, list, remove) | Planned (Phase 6) |
-| Weekly leaderboard scored on the server | Planned (Phase 6) |
+| Friends (search, request, accept/reject, list, remove) | ✅ Phase 6a |
+| Weekly leaderboard scored on the server | Planned (Phase 6b) |
 | Activity streaks (current + longest) | Planned (Phase 7) |
 | Settings (theme, unit, height, goal, privacy, logout) | 🟡 theme + logout done (Phase 2); the rest in Phase 7 |
 
@@ -110,7 +110,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 ```
 
 **Why this shape?**
-- **Business rules live on the server** (BMI, training volume, streaks, leaderboard score) so results are trustworthy and can be unit-tested.
+- **Business rules live on the server** (BMI, training volume, progressive-overload verdicts, friendship rules, streaks, leaderboard score) so results are trustworthy and can be unit-tested.
 - **The client only renders state** — Compose screens never talk to the database or contain scoring logic.
 - **One repository layer** on Android keeps networking details out of the ViewModels.
 
@@ -132,7 +132,7 @@ middleware: authenticate → validate(zod) → rateLimit
 controllers (HTTP concerns only)
    │
    ▼
-services (pure logic: auth, profiles, BMI, volume, progression — and later streaks, leaderboard)
+services (pure logic: auth, profiles, BMI, volume, progression, friendships — and later streaks, leaderboard)
    │
    ▼
 database (MongoDB collections + indexes)
@@ -230,6 +230,30 @@ Workouts tab ── "Progress" ──► Progress screen (pushed)
 - The whole judgement is done **on the server**. The app maps the verdict string to an enum and draws it; it never re-implements a rule, so a threshold change never needs an app release.
 - An exercise with fewer than two sessions has no trend; the payload says `insufficient_data` and shows a suggestion to log it again rather than inventing a comparison.
 
+### Android request flow (Phase 6a — friends)
+
+```
+Friends tab
+   │  LaunchedEffect(Unit) { refresh() }
+   ▼
+FriendsViewModel
+   ├─ friends()        → my accepted friends
+   ├─ requests()       → { incoming, outgoing }
+   └─ onQueryChange()  → 350 ms debounce → searchUsers(query)
+   ▼
+FriendRepository ── maps DTOs ──► Retrofit ──► OkHttp
+   ▼
+FriendsUiState (StateFlow)
+   ├─ friends / requests / busyIds / loadError
+   └─ query / results / isSearching / hasSearched
+```
+
+- Search is **debounced** (350 ms) so typing a whole username is one request; the box clears its results when emptied rather than leaving a stale search on screen.
+- What a result shows — *Add*, *Requested* or *Already friends* — is **derived from the lists already in state** (`FriendsUiState.relationTo`), so the server does not have to repeat the relationship with every search hit.
+- A change is keyed on an id while it is in flight (`busyIds`), so the exact row that was tapped shows a spinner and a double-tap cannot fire twice.
+- Every rule about who may befriend whom (not yourself, not an existing friend, only the recipient may accept) is enforced **on the server**; the app shows the server's message verbatim instead of duplicating the rules.
+- Refreshing after a change is what moves a person out of *Requests* and into *Friends* — the two lists are one state object, so they can never disagree.
+
 ---
 
 ## Repository structure
@@ -258,7 +282,7 @@ reprise/
 │               ├── di/AppModule.kt        # hand-written service locator
 │               ├── navigation/            # RepRiseApp (auth gate), MainScaffold,
 │               │                          # AuthNavHost, destinations
-│               ├── domain/model/          # User, AuthState, ThemeMode, Weight, Workout, Progression, enums
+│               ├── domain/model/          # User, AuthState, ThemeMode, Weight, Workout, Progression, Friend, enums
 │               ├── data/
 │               │   ├── remote/            # RepRiseApi, ApiClient, AuthInterceptor,
 │               │   │                      # ApiResult + ApiCall (error parsing), dto/
@@ -266,7 +290,8 @@ reprise/
 │               │   └── repository/        # AuthRepository (session source of truth),
 │               │                          # WeightRepository (weight + dashboard),
 │               │                          # WorkoutRepository (workout logging),
-│               │                          # ProgressionRepository (progressive overload)
+│               │                          # ProgressionRepository (progressive overload),
+│               │                          # FriendRepository (friends + requests)
 │               ├── util/                  # Formatting (ISO dates, kg/lb numbers, volume)
 │               ├── ui/theme/              # Color, Type, Theme, SettingsViewModel
 │               ├── ui/auth/               # LoginScreen, RegisterScreen, AuthViewModel
@@ -274,7 +299,8 @@ reprise/
 │               ├── ui/weights/            # WeightsScreen + WeightsViewModel
 │               ├── ui/workouts/           # WorkoutsScreen, WorkoutEditorScreen + ViewModels
 │               ├── ui/progression/        # ProgressionScreen + ProgressionViewModel
-│               ├── ui/{friends,profile}/…
+│               ├── ui/friends/            # FriendsScreen + FriendsViewModel
+│               ├── ui/profile/…
 │               └── components/            # reusable Compose widgets (ScreenContainer,
 │                                          # DetailScreen, RepRiseCard, WeightChart, …)
 └── backend/
@@ -290,10 +316,10 @@ reprise/
     │   ├── middleware/                    # requestLogger, notFound, errorHandler,
     │   │                                  # authenticate, validate, rateLimiter
     │   ├── routes/                        # index, health, auth, users, weights,
-    │   │                                  # dashboard, workouts, progression
-    │   ├── controllers/                   # auth, users, weights, workouts, dashboard, progression
-    │   ├── services/                      # auth, user, weight, workout, bmi, dashboard, progression
-    │   ├── validators/                    # common.fields, auth, user, weight, workout, progression (Zod)
+    │   │                                  # dashboard, workouts, progression, friends
+    │   ├── controllers/                   # auth, users, weights, workouts, dashboard, progression, friendship
+    │   ├── services/                      # auth, user, weight, workout, bmi, dashboard, progression, friendship
+    │   ├── validators/                    # common.fields, auth, user, weight, workout, progression, friendship (Zod)
     │   └── utils/                         # logger, ApiError, password, token, units, objectId
     └── tests/
         ├── helpers/                       # setup, app, db (shared test utilities)
@@ -301,7 +327,8 @@ reprise/
         ├── auth.test.js
         ├── weights.test.js
         ├── workouts.test.js
-        └── progression.test.js
+        ├── progression.test.js
+        └── friends.test.js
 ```
 
 ---
@@ -645,16 +672,48 @@ Rules the assistant applies (all in `src/services/progression.service.js`, **no 
 - An exercise that has **never** been logged is a `200` with an empty `sessions` array and an `insufficient_data` verdict, not a `404`: the app can always render the same shape.
 - Exercise names are matched **exactly** (the same string the app shows as a suggestion chip). The collated index below keeps that lookup cheap; the trade-off is documented under *Known limitations*.
 
-### Planned (Phases 6–7)
+### Implemented (Phase 6a — friends)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST | `/api/friends/requests` | yes | send a friend request |
-| GET/PATCH | `/api/friends/requests[/:id]` | yes | list / accept / reject requests |
-| GET/DELETE | `/api/friends[/:id]` | yes | list / remove friends |
-| GET | `/api/leaderboard/weekly` | yes | weekly friends leaderboard |
+| GET | `/api/users/search?username=<text>` | yes | prefix-search other users (excludes me) — shipped in Phase 2, listed here because it is what the Friends tab uses |
+| POST | `/api/friends/requests` | yes | send a friend request by username |
+| GET | `/api/friends/requests` | yes | pending requests, split into `incoming` / `outgoing` |
+| POST | `/api/friends/requests/:id/accept` | yes | accept a request sent **to me** |
+| DELETE | `/api/friends/requests/:id` | yes | decline (recipient) or withdraw (sender) a pending request |
+| GET | `/api/friends` | yes | my accepted friends, alphabetically |
+| DELETE | `/api/friends/:userId` | yes | remove a friendship |
 
-> `GET /api/dashboard` simply gains new sections (streak, leaderboard) as Phases 6–7 land — the app never has to be rewired.
+**Friendship flow**
+
+```
+POST /api/friends/requests          { "username": "bob_runs" }
+      -> 201 { request: { id, direction: "outgoing", user: { … }, createdAt } }
+GET  /api/friends/requests
+      -> 200 { incoming: [ { id, direction, user, createdAt } ], outgoing: [ … ] }
+POST /api/friends/requests/<id>/accept
+      -> 200 { friend: { id, username, displayName, profileImageUrl } }
+DELETE /api/friends/requests/<id>   -> 204 No Content
+GET  /api/friends                   -> 200 { friends: [ { id, username, displayName, profileImageUrl } ] }
+DELETE /api/friends/<userId>        -> 204 No Content
+```
+
+Design notes (`src/services/friendship.service.js`):
+
+- A friendship is **one row per pair**, not two. The row records who asked (`requesterId`) and who was asked (`recipientId`) so a *pending* request has a clear direction; once accepted the relationship is symmetric and both users are simply friends.
+- The pair is identified by a canonical **`pairKey`** — the two ids sorted and joined — which carries a **unique index**. That is what makes "A asks B" and "B asks A" impossible to end up as two rows, even if two requests race past the "does it already exist?" check.
+- Rules enforced **server-side**: you cannot befriend yourself, you cannot request someone you are already friends with (or already have a pending request with → `409`), and **only the recipient may accept** a request.
+- An unrelated user acting on a request gets a **`404`, not a `403`** — there is no reason to confirm that somebody else's request exists.
+- `DELETE /api/friends/requests/:id` covers both *decline* (recipient) and *withdraw* (sender): either party may remove their own pending row, and both are the same operation underneath.
+- A user who has since been **deleted** is skipped when their rows are read, so an orphaned request cannot crash a list.
+
+### Planned (Phases 6b–7)
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/leaderboard/weekly` | yes | weekly friends leaderboard (Phase 6b) |
+
+> `GET /api/dashboard` simply gains new sections (leaderboard, streak) as Phases 6b–7 land — the app never has to be rewired.
 
 **Error shape** (every failure):
 
@@ -683,7 +742,8 @@ Workout sessions with embedded exercises and sets.
 *The `summary` (exercise/set/reps counts, `totalVolumeKg`) is **not stored** — it is derived on every read, so it can never drift from the sets it describes.*
 
 ### `friendships`
-One row per relationship. `_id`, `requesterId`, `recipientId`, `status` (`pending`|`accepted`|`rejected`), `createdAt`, `updatedAt`.
+One row per relationship. `_id`, `pairKey`, `requesterId`, `recipientId`, `status` (`pending`|`accepted`), `createdAt`, `updatedAt`, `respondedAt?`.
+*`pairKey` is the two user ids sorted and joined (`a:b`); it is identical for A→B and B→A, and is what makes the unique index below forbid a duplicate relationship. Once `status` is `accepted` the direction stops mattering — both users are simply friends. A declined or withdrawn request is **deleted**, not kept as a `rejected` row, so the pair can try again later.*
 
 ### Indexes
 | Collection | Index | Purpose |
@@ -693,8 +753,9 @@ One row per relationship. `_id`, `requesterId`, `recipientId`, `status` (`pendin
 | `weight_entries` | `{ userId: 1, measuredAt: -1 }` | "my weight history, newest first" |
 | `workouts` | `{ userId: 1, workoutDate: -1 }` | "my workout history, newest first" |
 | `workouts` | `{ userId: 1, 'exercises.name': 1, workoutDate: -1 }` (`user_exercise_recent`) | one exercise's history for the progressive-overload comparison (Phase 5) — used by both progression endpoints |
-| `friendships` | `{ requesterId: 1, status: 1 }` | requests I sent / my friendships |
-| `friendships` | `{ recipientId: 1, status: 1 }` | requests I received |
+| `friendships` | `{ requesterId: 1, status: 1 }` (`friendship_requester_status`) | requests I sent / my friendships |
+| `friendships` | `{ recipientId: 1, status: 1 }` (`friendship_recipient_status`) | requests I received |
+| `friendships` | `{ pairKey: 1 }` **unique** (`uniq_friendship_pair`) | exactly **one** row per pair — a duplicate friendship is impossible, even under concurrent requests |
 
 Indexes are created automatically at startup by `src/database/indexes.js` and are visible in Atlas under **Collections → Indexes**.
 
@@ -711,15 +772,16 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **83 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **101 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
 - **Phase 3** — weight schemas (per-unit range, future/back-dated timestamps, empty update bodies), `401` on every weight route, create/list/latest/read/update/delete, unit conversion after a preference change, ownership isolation (another user gets `404` and the owner's entry is untouched), BMI from height + latest weight, `bmiUnavailableReason`, and the 30-day change.
 - **Phase 4** — workout schemas (nested exercises/sets, plausible loads, future dates, clearing a duration/note with an explicit `null`, empty update bodies), `401` on every workout route, create with a derived `summary`, the per-unit load check naming the exact set, the distinct-exercise catalogue, list/read/update (including replacing the exercise list)/delete, ownership isolation, and the dashboard's rolling training totals.
 - **Phase 5** — the rule-based verdict in isolation (a heavier top set, more volume, more reps at equal volume, a wobble *inside* the tolerance reading as `holding`, a real drop reading as `regressing`, and one-or-zero sessions reporting `insufficient_data`), the suggestion text for kg and lb accounts, the query schema, `401` on both progression routes, and — end to end — an empty-but-valid trend for an unknown exercise, `progressing` from two real sessions, `regressing` from a lighter session, the exercise list's counts, and that one user cannot read another's progression.
+- **Phase 6a** — the canonical pair key is order-independent, the request/param schemas, `401` on **every** friends route, and — end to end — a request visible to both sides, exactly **one** row per pair (a repeat, and the reverse direction while pending, are both `409` and add nothing), accepting making both users friends, only the recipient being able to accept (the sender and a stranger both get `404`), an already-answered request being `409`, decline and withdraw both removing the row, neither party being able to touch a request they are not part of, either friend being able to remove the friendship (and a second removal being `404`), re-requesting a friend being `409`, and friends being listed alphabetically.
 
-> **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries and workouts), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
+> **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries, workouts and friendships), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
 **Android**
 
@@ -729,7 +791,7 @@ cd android
 ./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
 
-The JVM suite (**71 tests**) covers the parts where a mistake is invisible until
+The JVM suite (**90 tests**) covers the parts where a mistake is invisible until
 runtime:
 
 - **`ApiCallTest`** — every shape the API can answer with: a successful response,
@@ -758,6 +820,16 @@ runtime:
   unknown-verdict fallback, the display unit and canonical `weightKg` for a pound
   account, an empty-but-valid trend, the `exercise`/`limit` query, the tracked-exercise
   list, and a rejection passing through with the server's message.
+- **`FriendRepositoryTest`** — the friend list and search results map onto
+  `UserSummary`, requests keep their direction and the other person, a direction
+  the app does not know is **skipped rather than crashing**, each call reaches the
+  right endpoint with the right argument (the username, the request id, the user
+  id), a `409` and a `404` pass through with the server's message intact, and an
+  empty friend list is still a success.
+- **`FriendsUiStateTest`** — the pure helpers that decide what the search box
+  shows next to a result: *FRIEND*, *REQUESTED*, *RESPONDS* or *NONE*, which id a
+  row's spinner is keyed on (the request id for accepting, the user id for adding
+  and removing), and finding the incoming request for a user.
 - **`WorkoutDraftParseTest`** — the editor's validation rules, which live in a pure
   function (`parseWorkoutDraft`) precisely so they can be tested without a device:
   blank names, reps/weights, "0 kg is fine but −5 is not", a comma decimal
@@ -796,13 +868,13 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 
 ## Screenshots
 
-> _Add screenshots of the finished app here before the demonstration. Suggested shots: dark-mode Home, weight history chart, an active workout, the progressive-overload comparison, and the weekly leaderboard._
+> _Add screenshots of the finished app here before the demonstration. Suggested shots: dark-mode Home, weight history chart, an active workout, the progressive-overload comparison, the Friends tab, and the weekly leaderboard._
 
 ---
 
 ## Professor demonstration procedure
 
-The full sequence below is the target for Phase 7. **Currently steps 1–8 are runnable, in the app itself.**
+The full sequence below is the target for Phase 7. **Currently steps 1–9 are runnable, in the app itself.**
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
 2. Register a new user in the app → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅
@@ -812,7 +884,7 @@ The full sequence below is the target for Phase 7. **Currently steps 1–8 are r
 6. Switch the units in the API to pounds (`PATCH /api/users/me {"weightUnit":"lb"}`) and reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Set a height and show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer. ✅
 7. Create a workout from the **Workouts** tab (*Log workout*): name it, add an exercise with several sets, and save → show the nested `workouts` document in Atlas, and the derived `summary` on the card. Edit it, then delete it. ✅
 8. Log a **second** session with the same exercise, then open **Progress** (Workouts → *Progress*), tap the exercise and show the **progressive-overload comparison**: the latest-vs-previous numbers, the verdict, and the rule-based suggestion. Log a lighter session and show the verdict flip to *Regressing*. ✅
-9. Register a second test account, send and accept a friend request → show the `friendships` document.
+9. Register a second test account, then on the first account search its username in the **Friends** tab (*Find by username*), send a request, switch accounts, and accept it → show the `friendships` document with its `pairKey` and `status: "accepted"`, and the `uniq_friendship_pair` index. Remove the friendship to show the row disappear. ✅
 10. Complete qualifying workouts and show how the weekly leaderboard score is computed.
 11. Explain the architecture, REST API, schema, authentication and scoring rules.
 
@@ -838,14 +910,15 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 | 3 | Dashboard, weight tracking, BMI, chart | ✅ **complete & verified** (backend + Home tab, Weight screen, trend chart) |
 | 4 | Workout logging (exercises + sets) | ✅ **complete & verified** (backend + Workouts tab, workout editor, Home training card) |
 | 5 | Progressive overload + unit tests | ✅ **complete & verified** (backend + Progress screen with rule-based verdicts) |
-| 6 | Friends + weekly leaderboard | ⏳ |
+| 6a | Friends (search, requests, friend list, removal) | ✅ **complete & verified** (backend + full Friends tab) |
+| 6b | Weekly leaderboard scored on the server | ⏳ |
 | 7 | Streaks, settings, polish, demo prep | ⏳ |
 
 ---
 
 ## Known limitations & future improvements
 
-- **Phases 1–5 complete** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, and the progressive-overload assistant work end to end. The Friends tab is still an honest placeholder until Phase 6.
+- **Phases 1–6a complete** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, and friends work end to end. The weekly leaderboard, streaks and the remaining Settings UI are still to come.
 - The only profile field editable in the app is the **display name**; goal, unit and height can be changed through `PATCH /api/users/me` and get their UI in Phase 7. This means the BMI card prompts you to *"add your height in your profile"* while there is currently no in-app field for it.
 - Weight entries and workouts are logged with the **current time** in the app (the common case). Back-dating is supported by the API (`measuredAt` / `workoutDate`) and documented above, but has no date picker in the UI yet.
 - A workout's **training volume is always shown in kilograms**. It is a figure for comparing sessions across units, not a body weight the user chose a unit for, so it is deliberately not converted. Per-set weights *are* converted to the preferred unit.
@@ -857,4 +930,5 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 - Progression compares only the **two most recent** sessions of an exercise. That answers "am I moving forward right now?" cleanly; longer-term trend lines would need a chart over `GET /api/progression`'s full session list (which the endpoint already returns).
 - BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.
 - Progressive-overload suggestions are **advisory, rule-based** guidance — not medical advice — and never change a workout automatically.
+- The Friends screen shows an avatar as the person's **initial**: the project deliberately has no image-loading library, so `profileImageUrl` is stored and returned by the API but not drawn. Friend requests carry **no message**, and the friends list is capped at the server's `FRIEND_LIST_MAX` (500).
 - Optional future work: push notifications for streaks, profile images, friend workout sharing, data export.

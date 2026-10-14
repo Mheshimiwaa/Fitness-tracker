@@ -28,7 +28,7 @@ async function updateMe(req, res) {
  * GET /api/users/search?username=<text>  ->  200 OK
  *
  * Prefix search over usernames, excluding the caller themself. Used by the
- * Friends screen (Phase 6) to find someone to add.
+ * Friends screen (Phase 6a) to find someone to add.
  */
 async function searchUsers(req, res) {
   const results = await userService.searchUsersByUsername(req.query.username, {

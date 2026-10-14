@@ -130,6 +130,7 @@
     <string name="action_delete">Delete</string>
     <string name="action_edit">Edit</string>
     <string name="action_save_short">Save</string>
+    <string name="action_dismiss">Dismiss</string>
 
     <!-- BMI categories (adult WHO bands, neutral descriptions only) -->
     <string name="bmi_underweight">Underweight</string>
@@ -207,6 +208,28 @@
     <!-- A number followed by a unit, e.g. "65 kg" or "+2.5 kg". -->
     <string name="value_with_unit">%1$s %2$s</string>
 
+    <!-- Friends (Phase 6a) -->
+    <string name="friends_search_label">Find by username</string>
+    <string name="friends_search_hint">Type a username to search</string>
+    <string name="friends_search_stop">Clear search</string>
+    <string name="friends_searching">Searching…</string>
+    <string name="friends_search_none">No users match that name.</string>
+    <string name="friends_section_requests">Requests</string>
+    <string name="friends_section_sent">Sent requests</string>
+    <string name="friends_add">Add</string>
+    <string name="friends_requested">Requested</string>
+    <string name="friends_wants_to_add_you">Wants to add you</string>
+    <string name="friends_already_friends">Already friends</string>
+    <string name="friends_accept">Accept</string>
+    <string name="friends_decline">Decline</string>
+    <string name="friends_withdraw">Withdraw</string>
+    <string name="friends_remove">Remove</string>
+    <string name="friends_wants_to_add_you_named">%1$s wants to add you</string>
+    <string name="friends_you_requested_named">You asked %1$s</string>
+    <string name="friends_remove_title">Remove friend?</string>
+    <string name="friends_remove_message">You and %1$s will no longer be friends.</string>
+    <string name="friends_username_at">@%1$s</string>
+
     <!-- Counted nouns. Using plurals means "1 set" never reads "1 sets". -->
     <plurals name="workouts_count">
         <item quantity="one">%1$d session</item>
@@ -227,5 +250,9 @@
     <plurals name="progression_reps">
         <item quantity="one">%1$d rep</item>
         <item quantity="other">%1$d reps</item>
+    </plurals>
+    <plurals name="friends_count">
+        <item quantity="one">%1$d friend</item>
+        <item quantity="other">%1$d friends</item>
     </plurals>
 </resources>

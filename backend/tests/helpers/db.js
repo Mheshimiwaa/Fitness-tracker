@@ -98,6 +98,20 @@ async function countWorkouts(userId) {
     .countDocuments({ userId: new ObjectId(userId) });
 }
 
+/**
+ * Count the friendship rows involving a user (any status, either direction).
+ *
+ * Used to prove that a pair can only ever have ONE row — a duplicate request or
+ * a double accept must not create the same row everywhere.
+ */
+async function countFriendshipsFor(userId) {
+  const db = getDb();
+  const id = new ObjectId(userId);
+  return db
+    .collection(COLLECTIONS.FRIENDSHIPS)
+    .countDocuments({ $or: [{ requesterId: id }, { recipientId: id }] });
+}
+
 /** Read one user document straight from the database (for assertions). */
 async function findUserDoc(usernameNormalized) {
   const db = getDb();
@@ -110,6 +124,7 @@ module.exports = {
   deleteUserDataByPrefix,
   countWeightEntries,
   countWorkouts,
+  countFriendshipsFor,
   findUserDoc,
   close,
 };

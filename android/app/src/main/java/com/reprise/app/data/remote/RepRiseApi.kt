@@ -5,15 +5,21 @@ import com.reprise.app.data.remote.dto.CreateWeightRequest
 import com.reprise.app.data.remote.dto.CreateWorkoutRequest
 import com.reprise.app.data.remote.dto.DashboardDto
 import com.reprise.app.data.remote.dto.ExerciseCatalogueDto
+import com.reprise.app.data.remote.dto.FriendEnvelopeDto
+import com.reprise.app.data.remote.dto.FriendListDto
+import com.reprise.app.data.remote.dto.FriendRequestEnvelopeDto
+import com.reprise.app.data.remote.dto.FriendRequestsDto
 import com.reprise.app.data.remote.dto.LatestWeightEnvelopeDto
 import com.reprise.app.data.remote.dto.LoginRequest
 import com.reprise.app.data.remote.dto.ProgressionDto
 import com.reprise.app.data.remote.dto.RegisterRequest
+import com.reprise.app.data.remote.dto.SendFriendRequestRequest
 import com.reprise.app.data.remote.dto.UpdateProfileRequest
 import com.reprise.app.data.remote.dto.UpdateWeightRequest
 import com.reprise.app.data.remote.dto.TrackedExerciseListDto
 import com.reprise.app.data.remote.dto.UpdateWorkoutRequest
 import com.reprise.app.data.remote.dto.UserEnvelopeDto
+import com.reprise.app.data.remote.dto.UserSearchResultsDto
 import com.reprise.app.data.remote.dto.WeightEntryEnvelopeDto
 import com.reprise.app.data.remote.dto.WeightHistoryDto
 import com.reprise.app.data.remote.dto.WorkoutEnvelopeDto
@@ -152,4 +158,43 @@ interface RepRiseApi {
     /** Every exercise the user has logged, with how often and when last. */
     @GET("api/progression/exercises")
     suspend fun trackedExercises(): Response<TrackedExerciseListDto>
+
+    // --- Friends (Phase 6a) -------------------------------------------------
+
+    /**
+     * Find other users by username prefix.
+     *
+     * Declared on the users resource, but grouped here because the Friends
+     * screen is its only caller.
+     */
+    @GET("api/users/search")
+    suspend fun searchUsers(@Query("username") username: String): Response<UserSearchResultsDto>
+
+    @POST("api/friends/requests")
+    suspend fun sendFriendRequest(
+        @Body body: SendFriendRequestRequest,
+    ): Response<FriendRequestEnvelopeDto>
+
+    /** Pending requests, split into incoming and outgoing. */
+    @GET("api/friends/requests")
+    suspend fun friendRequests(): Response<FriendRequestsDto>
+
+    /** Accept a request I received; the response carries the new friend. */
+    @POST("api/friends/requests/{id}/accept")
+    suspend fun acceptFriendRequest(@Path("id") id: String): Response<FriendEnvelopeDto>
+
+    /**
+     * Delete a pending request: a decline if I was asked, a withdrawal if I did
+     * the asking. The server answers 204 No Content.
+     */
+    @DELETE("api/friends/requests/{id}")
+    suspend fun deleteFriendRequest(@Path("id") id: String): Response<Unit>
+
+    /** My accepted friends, alphabetically by username. */
+    @GET("api/friends")
+    suspend fun friends(): Response<FriendListDto>
+
+    /** Remove a friendship. The server answers 204 No Content. */
+    @DELETE("api/friends/{userId}")
+    suspend fun removeFriend(@Path("userId") userId: String): Response<Unit>
 }

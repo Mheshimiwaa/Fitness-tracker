@@ -1,0 +1,46 @@
+package com.reprise.app.di
+
+import android.content.Context
+import com.reprise.app.data.local.SettingsStore
+import com.reprise.app.data.local.TokenStore
+import com.reprise.app.data.remote.ApiClient
+import com.reprise.app.data.repository.AuthRepository
+
+/**
+ * A tiny hand-written dependency container ("service locator").
+ *
+ * A large app would use Hilt/Dagger, but for a project this size that is a lot
+ * of machinery for little benefit. Everything is built ONCE here, in
+ * [RepRiseApplication], and the ViewModels read what they need from it.
+ *
+ * This keeps object creation in a single, obvious place instead of scattering
+ * `Retrofit.Builder()` calls through the UI.
+ */
+object AppModule {
+
+    private var initialized = false
+
+    lateinit var tokenStore: TokenStore
+        private set
+
+    lateinit var settingsStore: SettingsStore
+        private set
+
+    lateinit var authRepository: AuthRepository
+        private set
+
+    /** Called from [com.reprise.app.RepRiseApplication]. Safe to call twice. */
+    fun init(context: Context) {
+        if (initialized) return
+
+        val appContext = context.applicationContext
+        tokenStore = TokenStore(appContext)
+        settingsStore = SettingsStore(appContext)
+        authRepository = AuthRepository(
+            api = ApiClient.create(tokenStore),
+            tokenStore = tokenStore,
+        )
+
+        initialized = true
+    }
+}

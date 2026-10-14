@@ -1,101 +1,53 @@
 package com.reprise.app.navigation
 
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.reprise.app.R
-import com.reprise.app.ui.friends.FriendsScreen
-import com.reprise.app.ui.home.HomeScreen
-import com.reprise.app.ui.profile.ProfileScreen
-import com.reprise.app.ui.workouts.WorkoutsScreen
+import com.reprise.app.components.LoadingState
+import com.reprise.app.domain.model.AuthState
+import com.reprise.app.ui.auth.AuthViewModel
+import com.reprise.app.ui.theme.SettingsViewModel
 
 /**
- * The root composable: a single [Scaffold] holding the bottom navigation bar and
- * the [NavHost] that swaps the screen content.
+ * The root of the UI: decides whether to show the sign-in flow or the app.
  *
- * Navigation model (from the specification): one Activity, four top-level
- * destinations, no separate Activity per screen.
+ * "Gate" pattern: instead of navigating to a login screen and popping it later,
+ * we simply render different trees for signed-out and signed-in users. The
+ * session state is the single source of truth, so there is no way for the app
+ * and the UI to disagree about whether somebody is signed in.
  */
 @Composable
 fun RepRiseApp() {
-    // rememberNavController() survives recomposition; it owns the back stack.
-    val navController = rememberNavController()
+    // Both ViewModels are scoped to the Activity, so every screen shares one
+    // instance and therefore one copy of the state.
+    val authViewModel: AuthViewModel = viewModel(factory = AuthViewModel.Factory)
+    val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)
 
-    // Observe the current destination so we can highlight the selected tab.
-    val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = backStackEntry?.destination?.route
+    val authState by authViewModel.authState.collectAsStateWithLifecycle()
+    val formState by authViewModel.formState.collectAsStateWithLifecycle()
+    val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                TopLevelDestination.entries.forEach { destination ->
-                    val selected = currentRoute == destination.route
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            if (!selected) {
-                                navController.navigate(destination.route) {
-                                    // Keep a single copy of each tab on the back
-                                    // stack and remember where the user was.
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
-                        icon = { DestinationIcon(destination) },
-                        label = { Text(stringResource(destination.labelRes)) },
-                    )
-                }
-            }
-        }
-    ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = TopLevelDestination.HOME.route,
-            // Apply the Scaffold's padding so content is not hidden behind the bar.
-            modifier = Modifier.padding(innerPadding),
-        ) {
-            composable(TopLevelDestination.HOME.route) { HomeScreen() }
-            composable(TopLevelDestination.WORKOUTS.route) { WorkoutsScreen() }
-            composable(TopLevelDestination.FRIENDS.route) { FriendsScreen() }
-            composable(TopLevelDestination.PROFILE.route) { ProfileScreen() }
-        }
-    }
-}
+    when (val state = authState) {
+        // Still validating the stored token — show a spinner, NOT the login form.
+        AuthState.Unknown -> LoadingState(message = stringResource(R.string.auth_checking_session))
 
-/**
- * Picks the right icon for a tab.
- *
- * Two icons are custom vector drawables (dumbbell, group of people) because
- * Material's compact "core" icon set does not include them.
- */
-@Composable
-private fun DestinationIcon(destination: TopLevelDestination) {
-    when (destination) {
-        TopLevelDestination.HOME -> Icon(Icons.Filled.Home, contentDescription = null)
-        TopLevelDestination.WORKOUTS ->
-            Icon(painterResource(R.drawable.ic_workouts), contentDescription = null)
-        TopLevelDestination.FRIENDS ->
-            Icon(painterResource(R.drawable.ic_friends), contentDescription = null)
-        TopLevelDestination.PROFILE -> Icon(Icons.Filled.Person, contentDescription = null)
+        AuthState.SignedOut -> AuthNavHost(
+            formState = formState,
+            onLogin = authViewModel::login,
+            onRegister = authViewModel::register,
+            onInputChanged = authViewModel::clearMessages,
+        )
+
+        is AuthState.SignedIn -> MainScaffold(
+            user = state.user,
+            formState = formState,
+            themeMode = themeMode,
+            onSaveDisplayName = authViewModel::updateDisplayName,
+            onThemeModeChange = settingsViewModel::setThemeMode,
+            onLogout = authViewModel::logout,
+        )
     }
 }

@@ -21,6 +21,58 @@
     <string name="empty_workouts_message">Your logged strength sessions will appear here.</string>
     <string name="empty_friends_title">No friends yet</string>
     <string name="empty_friends_message">Search by username to send a friend request.</string>
-    <string name="empty_profile_title">Profile</string>
-    <string name="empty_profile_message">Your stats and settings will appear here.</string>
+
+    <!-- Authentication -->
+    <string name="auth_checking_session">Checking your session…</string>
+    <string name="auth_login_title">Welcome back</string>
+    <string name="auth_login_subtitle">Sign in to keep your streak going.</string>
+    <string name="auth_register_title">Create your account</string>
+    <string name="auth_register_subtitle">Consistency beats intensity. Let\'s get you set up.</string>
+
+    <string name="field_display_name">Display name</string>
+    <string name="field_display_name_hint">The name your friends will see</string>
+    <string name="field_username">Username</string>
+    <string name="field_username_hint">3–20 characters, starting with a letter</string>
+    <string name="field_username_or_email">Username or email</string>
+    <string name="field_username_or_email_hint">Either one works</string>
+    <string name="field_email">Email</string>
+    <string name="field_email_hint">Used to sign in and recover your account</string>
+    <string name="field_password">Password</string>
+    <string name="field_password_hint">At least 8 characters, with a letter and a number</string>
+
+    <string name="action_sign_in">Sign in</string>
+    <string name="action_create_account">Create account</string>
+    <string name="action_save">Save changes</string>
+    <string name="action_show_password">Show</string>
+    <string name="action_hide_password">Hide</string>
+    <string name="action_go_to_register">New to RepRise? Create an account</string>
+    <string name="action_go_to_login">Already have an account? Sign in</string>
+    <string name="action_log_out">Log out</string>
+
+    <!-- Profile -->
+    <string name="profile_account_title">Account</string>
+    <string name="profile_email">Email</string>
+    <string name="profile_goal">Goal</string>
+    <string name="profile_unit">Preferred unit</string>
+    <string name="profile_height">Height</string>
+    <string name="profile_height_value">%1$d cm</string>
+    <string name="profile_not_set">Not set</string>
+    <string name="profile_edit_name_title">Display name</string>
+    <string name="profile_saved">Profile updated</string>
+    <string name="profile_appearance_title">Appearance</string>
+
+    <!-- Fitness goals -->
+    <string name="goal_lose_weight">Lose weight</string>
+    <string name="goal_maintain">Maintain</string>
+    <string name="goal_gain_muscle">Gain muscle</string>
+    <string name="goal_improve_strength">Improve strength</string>
+
+    <!-- Weight units -->
+    <string name="unit_kg">Kilograms (kg)</string>
+    <string name="unit_lb">Pounds (lb)</string>
+
+    <!-- Theme -->
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
 </resources>

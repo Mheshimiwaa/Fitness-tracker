@@ -4,7 +4,7 @@ RepRise is a beginner-friendly Android fitness-tracking application built with *
 
 It lets users track body weight, calculate BMI, log strength workouts, get **progressive overload** suggestions, and compete with friends on a weekly leaderboard — inspired by Duolingo's consistency-based social motivation.
 
-> **Project status:** Phase 1 (foundation) is complete and verified. Phase 2 authentication & profile backend is complete (see [Implementation phases](#implementation-phases)); the Android auth screens are in progress.
+> **Project status:** Phases 1 and 2 are complete and verified. Phase 2 includes the authentication/profile **backend**, the Android **auth screens** (register, login, session restore, logout), the signed-in profile screen, and a theme switcher. See [Implementation phases](#implementation-phases).
 
 ---
 
@@ -46,7 +46,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | Feature | Status |
 |---|---|
 | Registration, login, logout, JWT-protected endpoints | ✅ Phase 2 |
-| Editable profile (display name, username, goal, height, unit) | ✅ Phase 2 (API) |
+| Editable profile — rename yourself in-app; goal/unit/height via the API | ✅ Phase 2 |
 | Dashboard summary with honest empty states | Planned (Phase 3) |
 | Body-weight tracking (CRUD, kg/lb, history, chart, period change) | Planned (Phase 3) |
 | BMI from latest weight + height, with adult categories & disclaimers | Planned (Phase 3) |
@@ -55,7 +55,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | Friends (search, request, accept/reject, list, remove) | Planned (Phase 6) |
 | Weekly leaderboard scored on the server | Planned (Phase 6) |
 | Activity streaks (current + longest) | Planned (Phase 7) |
-| Settings (theme, unit, height, goal, privacy, logout) | Planned (Phase 7) |
+| Settings (theme, unit, height, goal, privacy, logout) | 🟡 theme + logout done (Phase 2); the rest in Phase 7 |
 
 ### Optional improvements
 - Profile image rendering from a URL
@@ -141,6 +141,32 @@ database (MongoDB collections + indexes)
 central error handler → consistent JSON error shape
 ```
 
+### Android request flow (Phase 2)
+
+```
+MainActivity
+   │  applies the saved theme (DataStore)
+   ▼
+RepRiseApp ── observes AuthState ──┬─ Unknown   → LoadingState (checking the token)
+   │                               ├─ SignedOut → AuthNavHost (login / register)
+   │                               └─ SignedIn  → MainScaffold (the 4 tabs)
+   ▼
+AuthViewModel  (holds AuthFormState: submitting / error / field errors)
+   │  suspend calls
+   ▼
+AuthRepository ── owns AuthState, saves & clears the JWT
+   │
+   ▼
+Retrofit (RepRiseApi) ──► OkHttp ──┬─ AuthInterceptor adds "Bearer <token>"
+                                   └─ apiCall() maps Response → ApiResult
+```
+
+**How the session works**
+- The JWT is the *only* persisted session data, kept in `EncryptedSharedPreferences` (keys and values are encrypted with an Android Keystore key).
+- On launch the app calls `GET /api/auth/me` to confirm the stored token. A rejected token is deleted and the user is shown the login screen, so there is no half-signed-in state.
+- The session is a single `StateFlow` observed by the UI. Signing in or out swaps the whole composable tree, so the auth screens (and anything typed into them) cannot be reached again with the back button.
+- **Errors are values, not exceptions** — `apiCall()` converts every outcome into an `ApiResult`; the server's `error.message` is shown to the user, and per-field validation messages are attached to the matching text box.
+
 ---
 
 ## Repository structure
@@ -159,18 +185,26 @@ reprise/
 │   ├── gradlew / gradlew.bat
 │   └── app/
 │       ├── build.gradle.kts
-│       └── src/main/
+│       └── src/
 │           ├── AndroidManifest.xml
 │           ├── res/                       # strings, themes, colours, icons
+│           ├── test/java/com/reprise/app/ # JVM unit tests (no emulator needed)
 │           └── java/com/reprise/app/
-│               ├── MainActivity.kt
-│               ├── navigation/            # NavHost, bottom bar, destinations
-│               ├── ui/theme/              # Color, Type, Theme
+│               ├── RepRiseApplication.kt  # builds the dependency container
+│               ├── MainActivity.kt        # applies the saved theme, hosts Compose
+│               ├── di/AppModule.kt        # hand-written service locator
+│               ├── navigation/            # RepRiseApp (auth gate), MainScaffold,
+│               │                          # AuthNavHost, destinations
+│               ├── domain/model/          # User, AuthState, ThemeMode, enums
+│               ├── data/
+│               │   ├── remote/            # RepRiseApi, ApiClient, AuthInterceptor,
+│               │   │                      # ApiResult + ApiCall (error parsing), dto/
+│               │   ├── local/             # TokenStore (encrypted), SettingsStore
+│               │   └── repository/        # AuthRepository (session source of truth)
+│               ├── ui/theme/              # Color, Type, Theme, SettingsViewModel
+│               ├── ui/auth/               # LoginScreen, RegisterScreen, AuthViewModel
 │               ├── ui/{home,workouts,friends,profile}/…
-│               ├── components/            # reusable Compose widgets
-│               ├── viewmodels/            # (Phase 2+)
-│               ├── domain/model/          # (Phase 2+)
-│               └── data/                  # (Phase 2+) remote / local / repository
+│               └── components/            # reusable Compose widgets
 └── backend/
     ├── package.json
     ├── .env.example                       # placeholders only — never real secrets
@@ -313,7 +347,16 @@ source ~/.toolchain/env.sh      # adds the local JDK + Android SDK to PATH
 cd android
 ./gradlew :app:assembleDebug    # builds app/build/outputs/apk/debug/app-debug.apk
 ./gradlew :app:installDebug     # installs onto a running emulator/device
+./gradlew :app:testDebugUnitTest # runs the JVM unit tests (no device needed)
 ```
+
+**What you see on first run**
+
+The app opens on the **Create your account** / **Sign in** flow. The backend must
+be running (see above) — if it is not, the app shows *"Can't reach the server…"*
+rather than hanging. After registering or signing in, the four tabs appear and
+the session survives closing the app, because the JWT is stored encrypted on the
+device and re-validated with `GET /api/auth/me` on launch.
 
 ---
 
@@ -452,9 +495,22 @@ Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra
 
 ```bash
 cd android
-./gradlew :app:testDebugUnitTest     # JVM unit tests
-./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device)
+./gradlew :app:testDebugUnitTest          # JVM unit tests (no device needed)
+./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
+
+The JVM suite (**11 tests**) covers the parts where a mistake is invisible until
+runtime:
+
+- **`ApiCallTest`** — every shape the API can answer with: a successful response,
+  a `400` whose `details` array becomes per-field errors, a `409` whose
+  `details` object names the offending field, a plain `401`, an unreadable body
+  (falls back to a status-based message), and an unreachable server (no status
+  code). These run with no network and no emulator — the `Response` objects are
+  built in code.
+- **`DomainMappingTest`** — pins the `fitnessGoal` / `weightUnit` strings to the
+  backend's contract, and checks the unknown-value fallbacks and the theme-mode
+  resolution.
 
 **Manual API check (Postman or curl)**
 
@@ -491,18 +547,19 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 
 ## Professor demonstration procedure
 
-The full sequence below is the target for Phase 7. **Currently steps 1–3 are runnable** (step 3 via the API/Postman until the Android auth screens land in Phase 2b).
+The full sequence below is the target for Phase 7. **Currently steps 1–4 are runnable, in the app itself.**
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
-2. Open the Android app and show light/dark theme switching. ✅ *(theme; switch lands in Phase 7)*
-3. Register a new user → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅ *(via `POST /api/auth/register`; the in-app screen is Phase 2b)*
-4. Log a body weight → show the matching `weight_entries` document.
-5. Show BMI calculated from height + latest weight.
-6. Create a workout with several exercises and sets → show the `workouts` document.
-7. Log a second session and demonstrate the progressive-overload comparison.
-8. Register a second test account, send and accept a friend request → show the `friendships` document.
-9. Complete qualifying workouts and show how the weekly leaderboard score is computed.
-10. Explain the architecture, REST API, schema, authentication and scoring rules.
+2. Register a new user in the app → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅
+3. You are signed in automatically: rename yourself in Profile and switch **Appearance** between System / Light / Dark. ✅
+4. Show the errors the app surfaces (wrong password, duplicate username, weak password), sign out, then sign back in — close and reopen the app to prove the session is remembered. ✅
+5. Log a body weight → show the matching `weight_entries` document.
+6. Show BMI calculated from height + latest weight.
+7. Create a workout with several exercises and sets → show the `workouts` document.
+8. Log a second session and demonstrate the progressive-overload comparison.
+9. Register a second test account, send and accept a friend request → show the `friendships` document.
+10. Complete qualifying workouts and show how the weekly leaderboard score is computed.
+11. Explain the architecture, REST API, schema, authentication and scoring rules.
 
 **Test accounts** *(already created in Atlas during Phase 2)*:
 
@@ -522,7 +579,7 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Repo, Android project, Express backend, MongoDB connection, env vars, health check | ✅ **complete & verified** |
-| 2 | Auth (register/login/JWT), Compose theme, navigation, profile model | 🟡 **backend complete & verified**; Android auth screens next |
+| 2 | Auth (register/login/JWT), Compose theme, navigation, profile model | ✅ **complete & verified** (backend + Android auth screens, session restore, profile, theme) |
 | 3 | Dashboard, weight tracking, BMI, chart | ⏳ |
 | 4 | Workout logging (exercises + sets) | ⏳ |
 | 5 | Progressive overload + unit tests | ⏳ |
@@ -533,7 +590,9 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 
 ## Known limitations & future improvements
 
-- **Phases 1–2 (backend) complete** — the Android app still shows honest placeholders for the feature screens; the auth screens land in Phase 2b.
+- **Phases 1–2 complete** — authentication and profiles work end to end. The Home, Workouts and Friends tabs are still honest placeholders until Phases 3–6.
+- The only profile field editable in the app is the **display name**; goal, unit and height can be changed through `PATCH /api/users/me` and get their UI in Phase 7.
+- Session tokens are **stateless JWTs with no server-side revocation list**, so logout clears the token locally. Acceptable for a single-device demo; production would add refresh/revocation.
 - Leaderboard scoring, streaks and progressive overload are all **recomputed on demand** (no cached snapshots). Fine for an MVP; a snapshot collection could be added if leaderboards grow large.
 - BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.
 - Progressive-overload suggestions are **advisory, rule-based** guidance — not medical advice — and never change a workout automatically.

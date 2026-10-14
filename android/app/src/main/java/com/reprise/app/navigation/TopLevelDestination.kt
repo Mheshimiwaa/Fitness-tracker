@@ -13,8 +13,8 @@ import com.reprise.app.R
  */
 enum class TopLevelDestination(
     val route: String,
-    @StringRes val labelRes: Int,
-    @StringRes val titleRes: Int,
+    @param:StringRes val labelRes: Int,
+    @param:StringRes val titleRes: Int,
 ) {
     HOME("home", R.string.nav_home, R.string.title_home),
     WORKOUTS("workouts", R.string.nav_workouts, R.string.title_workouts),

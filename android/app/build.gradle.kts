@@ -5,6 +5,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    // Generates the code that turns @Serializable Kotlin classes into JSON.
+    alias(libs.plugins.kotlin.serialization)
     // NOTE: no `kotlin.android` plugin — AGP 9 compiles Kotlin built-in.
 }
 
@@ -87,6 +89,17 @@ dependencies {
 
     // --- Navigation ---
     implementation(libs.androidx.navigation.compose)
+
+    // --- Networking: Retrofit + OkHttp, with kotlinx.serialization for JSON ---
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.serialization)
+    implementation(libs.okhttp)
+    implementation(libs.okhttp.logging)
+    implementation(libs.kotlinx.serialization.json)
+
+    // --- Local storage: DataStore (preferences) + encrypted token storage ---
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.security.crypto)
 
     // --- Debug-only tooling (Layout Inspector / @Preview) ---
     debugImplementation(libs.androidx.compose.ui.tooling)

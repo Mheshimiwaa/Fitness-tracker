@@ -43,6 +43,40 @@ const PASSWORD_MAX_LENGTH = 72;
 const HEIGHT_CM_MIN = 50;
 const HEIGHT_CM_MAX = 272;
 
+/**
+ * Plausible adult body-weight range, expressed per unit.
+ *
+ * Bounds are checked AFTER the unit is known — either supplied by the client or
+ * defaulted from the user's preference — so "400" is rejected in kilograms but
+ * accepted in pounds.
+ */
+const WEIGHT_KG_MIN = 20;
+const WEIGHT_KG_MAX = 500;
+const WEIGHT_LB_MIN = 44;
+const WEIGHT_LB_MAX = 1102;
+
+/** Exact conversion factor (international avoirdupois pound). */
+const KG_PER_LB = 0.45359237;
+
+/** Free-text note attached to a weight entry. */
+const WEIGHT_NOTE_MAX_LENGTH = 200;
+
+/**
+ * A measurement is allowed slightly in the future to absorb clock skew between
+ * the phone and the server, but no further.
+ */
+const MEASUREMENT_FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+const MEASUREMENT_EARLIEST_YEAR = 1900;
+
+/**
+ * Adult BMI category thresholds, as defined by the World Health Organization.
+ * Each constant is the EXCLUSIVE upper bound of that band, so 25 falls into
+ * "overweight", exactly as the WHO table says.
+ */
+const BMI_UNDERWEIGHT_MAX = 18.5;
+const BMI_NORMAL_MAX = 25;
+const BMI_OVERWEIGHT_MAX = 30;
+
 module.exports = {
   FITNESS_GOALS,
   WEIGHT_UNITS,
@@ -51,4 +85,15 @@ module.exports = {
   PASSWORD_MAX_LENGTH,
   HEIGHT_CM_MIN,
   HEIGHT_CM_MAX,
+  WEIGHT_KG_MIN,
+  WEIGHT_KG_MAX,
+  WEIGHT_LB_MIN,
+  WEIGHT_LB_MAX,
+  KG_PER_LB,
+  WEIGHT_NOTE_MAX_LENGTH,
+  MEASUREMENT_FUTURE_TOLERANCE_MS,
+  MEASUREMENT_EARLIEST_YEAR,
+  BMI_UNDERWEIGHT_MAX,
+  BMI_NORMAL_MAX,
+  BMI_OVERWEIGHT_MAX,
 };

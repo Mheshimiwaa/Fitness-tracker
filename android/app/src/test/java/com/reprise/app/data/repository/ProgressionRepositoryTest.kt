@@ -12,6 +12,7 @@ import com.reprise.app.data.remote.dto.FriendListDto
 import com.reprise.app.data.remote.dto.FriendRequestEnvelopeDto
 import com.reprise.app.data.remote.dto.FriendRequestsDto
 import com.reprise.app.data.remote.dto.LatestWeightEnvelopeDto
+import com.reprise.app.data.remote.dto.LeaderboardDto
 import com.reprise.app.data.remote.dto.LoginRequest
 import com.reprise.app.data.remote.dto.ProgressionComparisonDto
 import com.reprise.app.data.remote.dto.ProgressionDto
@@ -381,4 +382,9 @@ private class FakeProgressionApi(
 
     override suspend fun removeFriend(userId: String): Response<Unit> =
         throw NotImplementedError("removeFriend is not used by ProgressionRepository")
+
+    // --- Leaderboard (Phase 6b; handled by LeaderboardRepositoryTest) ---------
+
+    override suspend fun weeklyLeaderboard(): Response<LeaderboardDto> =
+        throw NotImplementedError("weeklyLeaderboard is not used by ProgressionRepository")
 }

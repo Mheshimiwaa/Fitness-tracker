@@ -27,6 +27,7 @@ import com.reprise.app.domain.model.User
 import com.reprise.app.ui.auth.AuthFormState
 import com.reprise.app.ui.friends.FriendsScreen
 import com.reprise.app.ui.home.HomeScreen
+import com.reprise.app.ui.leaderboard.LeaderboardScreen
 import com.reprise.app.ui.profile.ProfileScreen
 import com.reprise.app.ui.progression.ProgressionScreen
 import com.reprise.app.ui.weights.WeightsScreen
@@ -111,7 +112,11 @@ fun MainScaffold(
                     onOpenProgress = { navController.navigate(PROGRESSION_ROUTE) },
                 )
             }
-            composable(TopLevelDestination.FRIENDS.route) { FriendsScreen() }
+            composable(TopLevelDestination.FRIENDS.route) {
+                FriendsScreen(
+                    onOpenLeaderboard = { navController.navigate(LEADERBOARD_ROUTE) },
+                )
+            }
             composable(TopLevelDestination.PROFILE.route) {
                 ProfileScreen(
                     user = user,
@@ -129,6 +134,9 @@ fun MainScaffold(
             }
             composable(PROGRESSION_ROUTE) {
                 ProgressionScreen(onBack = { navController.popBackStack() })
+            }
+            composable(LEADERBOARD_ROUTE) {
+                LeaderboardScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = "$WORKOUT_EDITOR_ROUTE/{workoutId}",

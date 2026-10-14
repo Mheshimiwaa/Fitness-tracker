@@ -230,6 +230,19 @@
     <string name="friends_remove_message">You and %1$s will no longer be friends.</string>
     <string name="friends_username_at">@%1$s</string>
 
+    <!-- Weekly leaderboard (Phase 6b) -->
+    <string name="title_leaderboard">Leaderboard</string>
+    <string name="leaderboard_card_title">Weekly leaderboard</string>
+    <string name="leaderboard_card_subtitle">See how you rank against your friends this week.</string>
+    <string name="leaderboard_week">This week · %1$s</string>
+    <string name="leaderboard_you_rank">You\'re #%1$d</string>
+    <string name="leaderboard_you_label">You</string>
+    <string name="leaderboard_how_scored">How scoring works</string>
+    <string name="leaderboard_scoring_rules">%1$d points for each day you train, plus %2$d bonus once you reach %3$d days.</string>
+    <string name="leaderboard_solo_hint">Add friends to compete — you\'re on the board alone for now.</string>
+    <string name="leaderboard_empty_title">No standings yet</string>
+    <string name="leaderboard_empty_message">Log a workout this week and your rank will appear here.</string>
+
     <!-- Counted nouns. Using plurals means "1 set" never reads "1 sets". -->
     <plurals name="workouts_count">
         <item quantity="one">%1$d session</item>
@@ -254,5 +267,17 @@
     <plurals name="friends_count">
         <item quantity="one">%1$d friend</item>
         <item quantity="other">%1$d friends</item>
+    </plurals>
+    <plurals name="leaderboard_points">
+        <item quantity="one">%1$d pt</item>
+        <item quantity="other">%1$d pts</item>
+    </plurals>
+    <plurals name="leaderboard_active_days">
+        <item quantity="one">%1$d active day</item>
+        <item quantity="other">%1$d active days</item>
+    </plurals>
+    <plurals name="leaderboard_workouts">
+        <item quantity="one">%1$d workout</item>
+        <item quantity="other">%1$d workouts</item>
     </plurals>
 </resources>

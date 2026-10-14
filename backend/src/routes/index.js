@@ -9,9 +9,10 @@
  * Phase 4: /api/workouts
  * Phase 5: /api/progression
  * Phase 6a: /api/friends
+ * Phase 6b: /api/leaderboard
  *
  * Later phases will add:
- *   router.use('/leaderboard', require('./leaderboard.routes'));
+ *   router.use('/streaks', require('./streak.routes'));
  */
 
 const express = require('express');
@@ -29,6 +30,7 @@ router.use('/weights', require('./weights.routes'));
 router.use('/workouts', require('./workouts.routes'));
 router.use('/progression', require('./progression.routes'));
 router.use('/friends', require('./friends.routes'));
+router.use('/leaderboard', require('./leaderboard.routes'));
 router.use('/dashboard', require('./dashboard.routes'));
 
 module.exports = router;

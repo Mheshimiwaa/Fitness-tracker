@@ -4,7 +4,7 @@ RepRise is a beginner-friendly Android fitness-tracking application built with *
 
 It lets users track body weight, calculate BMI, log strength workouts, get **progressive overload** suggestions, and compete with friends on a weekly leaderboard — inspired by Duolingo's consistency-based social motivation.
 
-> **Project status:** Phases 1–6a are complete and verified. Phase 6a adds **friends** end to end — username search, send/accept/decline/withdraw requests, the friend list and removal (`/api/users/search` and `/api/friends/*`, backed by a `friendships` collection) and a full **Friends** tab. The weekly leaderboard (Phase 6b) is next. See [Implementation phases](#implementation-phases).
+> **Project status:** Phases 1–6b are complete and verified. Phase 6b adds the **weekly friends leaderboard** — points for each day trained in the current (UTC) week, computed on the server from the existing `workouts` collection (`GET /api/leaderboard/weekly`) and shown on a dedicated screen reached from the Friends tab. Streaks and the remaining Settings UI (Phase 7) are next. See [Implementation phases](#implementation-phases).
 
 ---
 
@@ -53,7 +53,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | Workout logging (workout → exercises → sets of weight × reps) | ✅ Phase 4 |
 | Progressive overload comparison + rule-based suggestions | ✅ Phase 5 |
 | Friends (search, request, accept/reject, list, remove) | ✅ Phase 6a |
-| Weekly leaderboard scored on the server | Planned (Phase 6b) |
+| Weekly leaderboard scored on the server | ✅ Phase 6b |
 | Activity streaks (current + longest) | Planned (Phase 7) |
 | Settings (theme, unit, height, goal, privacy, logout) | 🟡 theme + logout done (Phase 2); the rest in Phase 7 |
 
@@ -132,7 +132,7 @@ middleware: authenticate → validate(zod) → rateLimit
 controllers (HTTP concerns only)
    │
    ▼
-services (pure logic: auth, profiles, BMI, volume, progression, friendships — and later streaks, leaderboard)
+services (pure logic: auth, profiles, BMI, volume, progression, friendships, leaderboard — and later streaks)
    │
    ▼
 database (MongoDB collections + indexes)
@@ -254,6 +254,28 @@ FriendsUiState (StateFlow)
 - Every rule about who may befriend whom (not yourself, not an existing friend, only the recipient may accept) is enforced **on the server**; the app shows the server's message verbatim instead of duplicating the rules.
 - Refreshing after a change is what moves a person out of *Requests* and into *Friends* — the two lists are one state object, so they can never disagree.
 
+### Android request flow (Phase 6b — weekly leaderboard)
+
+```
+Friends tab ─── "Weekly leaderboard" card ───► Leaderboard screen (pushed)
+                                                   │  LaunchedEffect(Unit) { refresh() }
+                                                   ▼
+                                             LeaderboardViewModel
+                                                   │  weekly()
+                                                   ▼
+                                             LeaderboardRepository ── maps DTOs ──► Retrofit ──► OkHttp
+                                                   ▼
+                                             LeaderboardUiState (StateFlow)
+                                                   └─ loading / error / board { week, scoring, entries }
+```
+
+- The leaderboard is a **pushed screen**, not a panel on the Friends tab: it answers a different question (*"how is everyone doing this week?"*) with its own refresh and its own back stack, and it leaves the two friend lists untouched.
+- Ranking and scoring are **entirely server-side**. The app receives `rank`, `score` and the per-entry `activeDays`/`workoutCount` already computed and only draws them — no rule is duplicated in the client.
+- The payload carries the **scoring rule itself** (`scoring: { pointsPerDay, bonusDays, bonusPoints }`), so the screen can explain a score without hard-coding the constants.
+- `isMe` marks your own row, so the client never needs its own user id to highlight it; the board always contains at least *you*, even with no friends.
+- No new collection, dependency or index was needed: `weeklyLeaderboard()` is a **single aggregation over `workouts`** that reuses the existing `user_workout_recent` index.
+- `formatWeekRange()` renders the window in **UTC** (subtracting a day from the exclusive end) so what the screen shows is exactly the Monday→Monday window the server scored.
+
 ---
 
 ## Repository structure
@@ -282,7 +304,8 @@ reprise/
 │               ├── di/AppModule.kt        # hand-written service locator
 │               ├── navigation/            # RepRiseApp (auth gate), MainScaffold,
 │               │                          # AuthNavHost, destinations
-│               ├── domain/model/          # User, AuthState, ThemeMode, Weight, Workout, Progression, Friend, enums
+│               ├── domain/model/          # User, AuthState, ThemeMode, Weight, Workout,
+│               │                          # Progression, Friend, Leaderboard, enums
 │               ├── data/
 │               │   ├── remote/            # RepRiseApi, ApiClient, AuthInterceptor,
 │               │   │                      # ApiResult + ApiCall (error parsing), dto/
@@ -291,7 +314,8 @@ reprise/
 │               │                          # WeightRepository (weight + dashboard),
 │               │                          # WorkoutRepository (workout logging),
 │               │                          # ProgressionRepository (progressive overload),
-│               │                          # FriendRepository (friends + requests)
+│               │                          # FriendRepository (friends + requests),
+│               │                          # LeaderboardRepository (weekly leaderboard)
 │               ├── util/                  # Formatting (ISO dates, kg/lb numbers, volume)
 │               ├── ui/theme/              # Color, Type, Theme, SettingsViewModel
 │               ├── ui/auth/               # LoginScreen, RegisterScreen, AuthViewModel
@@ -300,9 +324,11 @@ reprise/
 │               ├── ui/workouts/           # WorkoutsScreen, WorkoutEditorScreen + ViewModels
 │               ├── ui/progression/        # ProgressionScreen + ProgressionViewModel
 │               ├── ui/friends/            # FriendsScreen + FriendsViewModel
+│               ├── ui/leaderboard/        # LeaderboardScreen + LeaderboardViewModel
 │               ├── ui/profile/…
 │               └── components/            # reusable Compose widgets (ScreenContainer,
-│                                          # DetailScreen, RepRiseCard, WeightChart, …)
+│                                          # DetailScreen, RepRiseCard, WeightChart,
+│                                          # UserAvatar, …)
 └── backend/
     ├── package.json
     ├── .env.example                       # placeholders only — never real secrets
@@ -315,12 +341,15 @@ reprise/
     │   ├── database/                      # connection, collections, indexes
     │   ├── middleware/                    # requestLogger, notFound, errorHandler,
     │   │                                  # authenticate, validate, rateLimiter
-    │   ├── routes/                        # index, health, auth, users, weights,
-    │   │                                  # dashboard, workouts, progression, friends
-    │   ├── controllers/                   # auth, users, weights, workouts, dashboard, progression, friendship
-    │   ├── services/                      # auth, user, weight, workout, bmi, dashboard, progression, friendship
+    │   ├── routes/                        # index, health, auth, users, weights, dashboard,
+    │   │                                  # workouts, progression, friends, leaderboard
+    │   ├── controllers/                   # auth, users, weights, workouts, dashboard, progression,
+    │   │                                  # friendship, leaderboard
+    │   ├── services/                      # auth, user, weight, workout, bmi, dashboard, progression,
+    │   │                                  # friendship, leaderboard
     │   ├── validators/                    # common.fields, auth, user, weight, workout, progression, friendship (Zod)
     │   └── utils/                         # logger, ApiError, password, token, units, objectId
+    ├── scripts/                           # read-only dev tools (inspect-db.js, serve-db.js)
     └── tests/
         ├── helpers/                       # setup, app, db (shared test utilities)
         ├── health.test.js
@@ -328,7 +357,8 @@ reprise/
         ├── weights.test.js
         ├── workouts.test.js
         ├── progression.test.js
-        └── friends.test.js
+        ├── friends.test.js
+        └── leaderboard.test.js
 ```
 
 ---
@@ -433,6 +463,29 @@ curl http://localhost:4000/api/health
 ```
 
 If the database is unreachable the endpoint returns **503** with `"status": "degraded"` — the server refuses to pretend everything is fine.
+
+### Inspecting the database (development scripts)
+
+`mongosh` and Compass are not always available, so two small **read-only** helpers live in `backend/scripts/`. They use the backend's own `express`/`mongodb` dependencies *and its real service functions* (volume, BMI, leaderboard score), so what they show cannot drift from what the API returns. Run them from `backend/`:
+
+```bash
+# a terminal report of exactly what the app has stored
+node scripts/inspect-db.js                 # overview: collection counts + users
+node scripts/inspect-db.js user <username> # one person: profile, weights, workouts, friends, points
+node scripts/inspect-db.js indexes         # the indexes the app created
+node scripts/inspect-db.js --help          # every command
+
+# the same data as a read-only web page — handy for the demonstration
+node scripts/serve-db.js                   # http://localhost:8081  (login: reprise / reprise123)
+```
+
+`inspect-db.js` is the quickest way to *see* a document without opening Atlas, and `raw <username>` prints the stored document verbatim (including the bcrypt `passwordHash`, never a plain-text password). `serve-db.js` renders every collection and every user as HTML; it binds to `127.0.0.1` by default — set `DBVIEW_HOST=0.0.0.0` (plus a real `DBVIEW_PASSWORD`) to reach it from another device on the same network. **Neither script writes, updates or deletes anything.**
+
+Both default to the `MONGODB_URI` from `.env`; for a local server, pass it inline:
+
+```bash
+MONGODB_URI="mongodb://127.0.0.1:27017" node scripts/inspect-db.js
+```
 
 ---
 
@@ -707,13 +760,51 @@ Design notes (`src/services/friendship.service.js`):
 - `DELETE /api/friends/requests/:id` covers both *decline* (recipient) and *withdraw* (sender): either party may remove their own pending row, and both are the same operation underneath.
 - A user who has since been **deleted** is skipped when their rows are read, so an orphaned request cannot crash a list.
 
-### Planned (Phases 6b–7)
+### Implemented (Phase 6b — weekly leaderboard)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/api/leaderboard/weekly` | yes | weekly friends leaderboard (Phase 6b) |
+| GET | `/api/leaderboard/weekly` | yes | me + my accepted friends, ranked by points earned this week |
 
-> `GET /api/dashboard` simply gains new sections (leaderboard, streak) as Phases 6b–7 land — the app never has to be rewired.
+**Leaderboard flow**
+
+```
+GET /api/leaderboard/weekly
+      -> 200 {
+           week:    { startDate, endDate },                       // Monday 00:00 UTC -> next Monday (end is EXCLUSIVE)
+           scoring: { pointsPerDay, bonusDays, bonusPoints },
+           entries: [ { rank, user, score, activeDays, workoutCount, isMe } ],
+           me:      { rank, user, score, activeDays, workoutCount, isMe }
+         }
+```
+
+An entry looks like this on the wire:
+
+```json
+{
+  "rank": 1,
+  "user": { "id": "…", "username": "sam_spotter", "displayName": "Sam Spotter", "profileImageUrl": null },
+  "score": 25,
+  "activeDays": 3,
+  "workoutCount": 4,
+  "isMe": false
+}
+```
+
+Rules the server applies (`src/services/leaderboard.service.js` — everything here is computed, never stored):
+
+- The window is **fixed and UTC-based**: this week's Monday `00:00` up to (but not including) the next Monday `00:00`, so `endDate` is *exclusive*.
+- Only **distinct calendar days** on which at least one workout was logged count: `score = activeDays × pointsPerDay`, **plus `bonusPoints` once `activeDays` reaches `bonusDays`**. With the shipped constants that is `10` points per active day and a `+5` bonus from `3` days — so it rewards **consistency over volume**, and one huge session cannot out-rank several short ones.
+- The board holds **you and your accepted friends** (`friendIdsOf`), so a brand-new user with no friends still sees a one-row board instead of a blank screen.
+- `rank` uses **standard competition ranking** — equal scores share the better rank and the next rank is skipped — so genuine ties are shown as ties.
+- `isMe` marks your own row, so the client never needs its own id to highlight it.
+- Scores are **recomputed on every request**; there is deliberately no `points` collection that could drift from the workouts it summarises. **No new index is required** — the aggregation reuses `user_workout_recent`.
+
+### Planned (Phase 7)
+
+Streaks are the remaining scored feature: `GET /api/dashboard` will gain a `streak` section (current and longest), and the remaining Settings fields (height, goal, unit) get their UI.
+
+> `GET /api/dashboard` has gained a section with each phase the same way — weight/BMI in Phase 3, training totals in Phase 4 — so Phase 7 adds the streak without the app having to be rewired.
 
 **Error shape** (every failure):
 
@@ -759,7 +850,7 @@ One row per relationship. `_id`, `pairKey`, `requesterId`, `recipientId`, `statu
 
 Indexes are created automatically at startup by `src/database/indexes.js` and are visible in Atlas under **Collections → Indexes**.
 
-**Leaderboard scores and streaks are not stored** — they are recomputed from `workouts` on every request so the numbers can never drift out of sync.
+**Leaderboard scores and streaks are not stored** — there is no `points` or `streaks` collection. They are recomputed from `workouts` on every request so they can never drift out of sync with the sessions that justify them. The weekly leaderboard therefore adds **no new collection and no new index**: its single aggregation reuses the `user_workout_recent` index above.
 
 ---
 
@@ -772,7 +863,7 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **101 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **110 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
@@ -780,6 +871,7 @@ Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra
 - **Phase 4** — workout schemas (nested exercises/sets, plausible loads, future dates, clearing a duration/note with an explicit `null`, empty update bodies), `401` on every workout route, create with a derived `summary`, the per-unit load check naming the exact set, the distinct-exercise catalogue, list/read/update (including replacing the exercise list)/delete, ownership isolation, and the dashboard's rolling training totals.
 - **Phase 5** — the rule-based verdict in isolation (a heavier top set, more volume, more reps at equal volume, a wobble *inside* the tolerance reading as `holding`, a real drop reading as `regressing`, and one-or-zero sessions reporting `insufficient_data`), the suggestion text for kg and lb accounts, the query schema, `401` on both progression routes, and — end to end — an empty-but-valid trend for an unknown exercise, `progressing` from two real sessions, `regressing` from a lighter session, the exercise list's counts, and that one user cannot read another's progression.
 - **Phase 6a** — the canonical pair key is order-independent, the request/param schemas, `401` on **every** friends route, and — end to end — a request visible to both sides, exactly **one** row per pair (a repeat, and the reverse direction while pending, are both `409` and add nothing), accepting making both users friends, only the recipient being able to accept (the sender and a stranger both get `404`), an already-answered request being `409`, decline and withdraw both removing the row, neither party being able to touch a request they are not part of, either friend being able to remove the friendship (and a second removal being `404`), re-requesting a friend being `409`, and friends being listed alphabetically.
+- **Phase 6b** — the scoring rule in isolation (a day with nothing logged scores `0`, `10` per active day, and the `+5` consistency bonus landing **exactly** at three days and not before) and the week boundary (a Wednesday, a Monday and a Sunday night each resolving to the correct Monday `00:00` UTC). Then, end to end: `401` without a token, a friendless user seeing **only themselves on zero**, the board being **me and my friends and nobody else**, a second workout on the same day **not** scoring twice while both still count in `workoutCount`, last week's session not counting at all, a trainer ranking above an idle friend, and two equal scores **sharing a rank**.
 
 > **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries, workouts and friendships), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
@@ -791,7 +883,7 @@ cd android
 ./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
 
-The JVM suite (**90 tests**) covers the parts where a mistake is invisible until
+The JVM suite (**102 tests**) covers the parts where a mistake is invisible until
 runtime:
 
 - **`ApiCallTest`** — every shape the API can answer with: a successful response,
@@ -826,10 +918,19 @@ runtime:
   right endpoint with the right argument (the username, the request id, the user
   id), a `409` and a `404` pass through with the server's message intact, and an
   empty friend list is still a success.
+- **`LeaderboardRepositoryTest`** — the leaderboard payload maps faithfully: the
+  week window, the scoring rule, every entry's rank/score/active-days/workout
+  count and the person behind each row (not just their id), the derived `me` row
+  picking the entry flagged `isMe`, an empty board having no `me` row, and a
+  `401` passing through with the server's message.
 - **`FriendsUiStateTest`** — the pure helpers that decide what the search box
   shows next to a result: *FRIEND*, *REQUESTED*, *RESPONDS* or *NONE*, which id a
   row's spinner is keyed on (the request id for accepting, the user id for adding
   and removing), and finding the incoming request for a user.
+- **`UserAvatarTest`** — the `initialOf` rule behind the avatar circle: the first
+  letter of the display name (upper-cased), surrounding whitespace ignored, a
+  blank display name falling back to the username, and both blank returning an
+  empty string rather than throwing.
 - **`WorkoutDraftParseTest`** — the editor's validation rules, which live in a pure
   function (`parseWorkoutDraft`) precisely so they can be tested without a device:
   blank names, reps/weights, "0 kg is fine but −5 is not", a comma decimal
@@ -874,7 +975,7 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 
 ## Professor demonstration procedure
 
-The full sequence below is the target for Phase 7. **Currently steps 1–9 are runnable, in the app itself.**
+The full sequence below is the target for Phase 7. **Currently steps 1–10 are runnable, in the app itself.**
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
 2. Register a new user in the app → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅
@@ -885,7 +986,7 @@ The full sequence below is the target for Phase 7. **Currently steps 1–9 are r
 7. Create a workout from the **Workouts** tab (*Log workout*): name it, add an exercise with several sets, and save → show the nested `workouts` document in Atlas, and the derived `summary` on the card. Edit it, then delete it. ✅
 8. Log a **second** session with the same exercise, then open **Progress** (Workouts → *Progress*), tap the exercise and show the **progressive-overload comparison**: the latest-vs-previous numbers, the verdict, and the rule-based suggestion. Log a lighter session and show the verdict flip to *Regressing*. ✅
 9. Register a second test account, then on the first account search its username in the **Friends** tab (*Find by username*), send a request, switch accounts, and accept it → show the `friendships` document with its `pairKey` and `status: "accepted"`, and the `uniq_friendship_pair` index. Remove the friendship to show the row disappear. ✅
-10. Complete qualifying workouts and show how the weekly leaderboard score is computed.
+10. Open **Friends → *Weekly leaderboard*** and show the week: the Monday→Monday UTC window, each friend's rank and points, the `+5` consistency bonus appearing once someone reaches three active days, and your own row marked. Explain that the score is a **live aggregation over `workouts`** — nothing is stored. ✅
 11. Explain the architecture, REST API, schema, authentication and scoring rules.
 
 **Test accounts** *(already created in Atlas during Phase 2)*:
@@ -911,14 +1012,14 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 | 4 | Workout logging (exercises + sets) | ✅ **complete & verified** (backend + Workouts tab, workout editor, Home training card) |
 | 5 | Progressive overload + unit tests | ✅ **complete & verified** (backend + Progress screen with rule-based verdicts) |
 | 6a | Friends (search, requests, friend list, removal) | ✅ **complete & verified** (backend + full Friends tab) |
-| 6b | Weekly leaderboard scored on the server | ⏳ |
+| 6b | Weekly leaderboard scored on the server | ✅ **complete & verified** (backend + a leaderboard screen reached from the Friends tab) |
 | 7 | Streaks, settings, polish, demo prep | ⏳ |
 
 ---
 
 ## Known limitations & future improvements
 
-- **Phases 1–6a complete** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, and friends work end to end. The weekly leaderboard, streaks and the remaining Settings UI are still to come.
+- **Phases 1–6b complete** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, friends and the weekly leaderboard work end to end. Streaks and the remaining Settings UI are still to come.
 - The only profile field editable in the app is the **display name**; goal, unit and height can be changed through `PATCH /api/users/me` and get their UI in Phase 7. This means the BMI card prompts you to *"add your height in your profile"* while there is currently no in-app field for it.
 - Weight entries and workouts are logged with the **current time** in the app (the common case). Back-dating is supported by the API (`measuredAt` / `workoutDate`) and documented above, but has no date picker in the UI yet.
 - A workout's **training volume is always shown in kilograms**. It is a figure for comparing sessions across units, not a body weight the user chose a unit for, so it is deliberately not converted. Per-set weights *are* converted to the preferred unit.
@@ -926,6 +1027,7 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 - The weight history list is capped at the server's default page (100 entries); older entries are still counted in "All time" totals and can be paged through the API, but the app does not paginate yet. The Workouts list shows the 50 most recent sessions.
 - Session tokens are **stateless JWTs with no server-side revocation list**, so logout clears the token locally. Acceptable for a single-device demo; production would add refresh/revocation.
 - Leaderboard scoring, streaks and progressive overload are all **recomputed on demand** (no cached snapshots). Fine for an MVP; a snapshot collection could be added if leaderboards grow large.
+- The weekly leaderboard is **friends-only** — there is no global board — and it scores **days trained**, not effort or strength, so a heavy session and a light one on the same day are worth the same. That is intentional (it rewards consistency), but it means the board is not a strength ranking. The week is **UTC Monday → Monday**, so a user in a distant time zone may see it roll over at an unexpected local hour.
 - Progressive overload matches exercise names **exactly** (case- and spelling-sensitive), because the indexed lookup is a plain equality match — which keeps it fast and predictable. The editor's "previously logged" chips steer you onto the same spelling, so names converge in practice; a future version could store a normalised name alongside the display name.
 - Progression compares only the **two most recent** sessions of an exercise. That answers "am I moving forward right now?" cleanly; longer-term trend lines would need a chart over `GET /api/progression`'s full session list (which the endpoint already returns).
 - BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.

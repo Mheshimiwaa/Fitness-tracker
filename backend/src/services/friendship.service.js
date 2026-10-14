@@ -156,6 +156,28 @@ async function listFriends(userId) {
     .sort((a, b) => a.username.localeCompare(b.username));
 }
 
+/**
+ * The ids of the user's accepted friends.
+ *
+ * Cheaper than `listFriends` when the caller only needs the ids (the weekly
+ * leaderboard does): no user documents are fetched, just the friendship rows.
+ *
+ * @returns {Promise<import('mongodb').ObjectId[]>}
+ */
+async function friendIdsOf(userId) {
+  const id = toObjectId(userId);
+
+  const rows = await friendships()
+    .find(
+      { status: STATUS.ACCEPTED, $or: [{ requesterId: id }, { recipientId: id }] },
+      { projection: { requesterId: 1, recipientId: 1 } }
+    )
+    .limit(FRIEND_LIST_MAX)
+    .toArray();
+
+  return rows.map((row) => otherPartyId(row, id));
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
@@ -298,6 +320,7 @@ async function removeFriend(userId, otherUserId) {
 module.exports = {
   STATUS,
   pairKeyOf,
+  friendIdsOf,
   sendRequest,
   listRequests,
   listFriends,

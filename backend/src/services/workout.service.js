@@ -28,11 +28,11 @@ const {
   SET_WEIGHT_KG_MAX,
   SET_WEIGHT_LB_MAX,
   WORKOUT_RECENT_DAYS,
+  MS_PER_DAY,
 } = require('../config/constants');
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 200;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** The workouts collection. Called lazily so the DB is connected first. */
 function workouts() {

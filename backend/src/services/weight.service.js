@@ -27,12 +27,12 @@ const {
   WEIGHT_KG_MAX,
   WEIGHT_LB_MIN,
   WEIGHT_LB_MAX,
+  MS_PER_DAY,
 } = require('../config/constants');
 
 const DEFAULT_HISTORY_LIMIT = 100;
 const MAX_HISTORY_LIMIT = 500;
 const DEFAULT_CHANGE_WINDOW_DAYS = 30;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** The weight_entries collection. Called lazily so the DB is connected first. */
 function weightEntries() {

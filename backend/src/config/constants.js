@@ -142,6 +142,26 @@ const PROGRESSION_MAX_LIMIT = 50;
  */
 const FRIEND_LIST_MAX = 500;
 
+/**
+ * Weekly leaderboard.
+ *
+ * Scoring is deliberately simple and *gainable*: a user earns
+ * `LEADERBOARD_POINTS_PER_DAY` points for each DISTINCT day on which they
+ * logged at least one workout — a second session on the same day adds nothing,
+ * because the app rewards consistency rather than volume — plus a flat
+ * `LEADERBOARD_BONUS_POINTS` once they train on `LEADERBOARD_BONUS_DAYS` days.
+ *
+ * A week runs Monday 00:00 to the following Monday 00:00, evaluated in UTC. A
+ * fixed, documented boundary is what makes "this week" mean the same thing to
+ * everyone; it deliberately does not depend on where the server happens to run.
+ */
+const LEADERBOARD_POINTS_PER_DAY = 10;
+const LEADERBOARD_BONUS_DAYS = 3;
+const LEADERBOARD_BONUS_POINTS = 5;
+
+/** Milliseconds in a day — shared by every date-window calculation. */
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
 module.exports = {
   FITNESS_GOALS,
   WEIGHT_UNITS,
@@ -181,4 +201,8 @@ module.exports = {
   PROGRESSION_DEFAULT_LIMIT,
   PROGRESSION_MAX_LIMIT,
   FRIEND_LIST_MAX,
+  LEADERBOARD_POINTS_PER_DAY,
+  LEADERBOARD_BONUS_DAYS,
+  LEADERBOARD_BONUS_POINTS,
+  MS_PER_DAY,
 };

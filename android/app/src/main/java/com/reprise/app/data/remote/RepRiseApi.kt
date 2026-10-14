@@ -10,6 +10,7 @@ import com.reprise.app.data.remote.dto.FriendListDto
 import com.reprise.app.data.remote.dto.FriendRequestEnvelopeDto
 import com.reprise.app.data.remote.dto.FriendRequestsDto
 import com.reprise.app.data.remote.dto.LatestWeightEnvelopeDto
+import com.reprise.app.data.remote.dto.LeaderboardDto
 import com.reprise.app.data.remote.dto.LoginRequest
 import com.reprise.app.data.remote.dto.ProgressionDto
 import com.reprise.app.data.remote.dto.RegisterRequest
@@ -197,4 +198,16 @@ interface RepRiseApi {
     /** Remove a friendship. The server answers 204 No Content. */
     @DELETE("api/friends/{userId}")
     suspend fun removeFriend(@Path("userId") userId: String): Response<Unit>
+
+    // --- Weekly leaderboard (Phase 6b) --------------------------------------
+
+    /**
+     * This week's board: the signed-in user and their friends, ranked by the
+     * server's consistency score.
+     *
+     * The response also carries the week window and the scoring rules, so the
+     * numbers can be explained without the app hard-coding them.
+     */
+    @GET("api/leaderboard/weekly")
+    suspend fun weeklyLeaderboard(): Response<LeaderboardDto>
 }

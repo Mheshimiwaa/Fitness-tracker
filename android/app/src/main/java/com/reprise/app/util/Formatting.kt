@@ -1,6 +1,7 @@
 package com.reprise.app.util
 
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -137,3 +138,55 @@ fun formatEditableNumber(value: Double, decimals: Int = 1): String {
  */
 fun formatVolume(value: Double, locale: Locale = Locale.getDefault()): String =
     String.format(locale, "%,.0f", value)
+
+/** Milliseconds in a day — used to step back from an exclusive end date. */
+private const val DAY_MS = 24L * 60 * 60 * 1000
+
+/**
+ * A human week range such as "12–18 Oct 2026".
+ *
+ * The leaderboard's `endDate` is EXCLUSIVE — it is the following Monday — so a
+ * day is subtracted to show the week's real last day. The days are formatted in
+ * UTC, the same zone the server uses to pick the window, so what the user reads
+ * cannot drift with the device's timezone.
+ *
+ * A range that crosses a month or a year names both ends ("28 Sep – 4 Oct 2026",
+ * "28 Dec 2026 – 3 Jan 2027"); one within a single month shows only the day of
+ * the first end ("12–18 Oct 2026").
+ *
+ * Falls back to an empty string when either end cannot be parsed.
+ */
+fun formatWeekRange(
+    startIso: String?,
+    endIsoExclusive: String?,
+    locale: Locale = Locale.getDefault(),
+): String {
+    val start = parseIsoInstant(startIso) ?: return ""
+    val endExclusive = parseIsoInstant(endIsoExclusive) ?: return ""
+    val end = Date(endExclusive.time - DAY_MS)
+
+    val startDay = calendarUtc(start)
+    val endDay = calendarUtc(end)
+
+    return when {
+        startDay.get(Calendar.YEAR) != endDay.get(Calendar.YEAR) ->
+            "${utcFormat("d MMM yyyy", locale).format(start)} – " +
+                utcFormat("d MMM yyyy", locale).format(end)
+
+        startDay.get(Calendar.MONTH) != endDay.get(Calendar.MONTH) ->
+            "${utcFormat("d MMM", locale).format(start)} – " +
+                utcFormat("d MMM yyyy", locale).format(end)
+
+        else ->
+            "${utcFormat("d", locale).format(start)}–" +
+                utcFormat("d MMM yyyy", locale).format(end)
+    }
+}
+
+/** A calendar pinned to UTC, so a date's day/month/year never shift by locale. */
+private fun calendarUtc(date: Date): Calendar =
+    Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply { time = date }
+
+/** A formatter pinned to UTC, matching how the server expresses the week. */
+private fun utcFormat(pattern: String, locale: Locale): SimpleDateFormat =
+    SimpleDateFormat(pattern, locale).apply { timeZone = TimeZone.getTimeZone("UTC") }

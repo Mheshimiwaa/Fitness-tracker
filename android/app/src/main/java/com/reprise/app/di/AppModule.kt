@@ -6,6 +6,7 @@ import com.reprise.app.data.local.TokenStore
 import com.reprise.app.data.remote.ApiClient
 import com.reprise.app.data.repository.AuthRepository
 import com.reprise.app.data.repository.FriendRepository
+import com.reprise.app.data.repository.LeaderboardRepository
 import com.reprise.app.data.repository.ProgressionRepository
 import com.reprise.app.data.repository.WeightRepository
 import com.reprise.app.data.repository.WorkoutRepository
@@ -45,6 +46,9 @@ object AppModule {
     lateinit var friendRepository: FriendRepository
         private set
 
+    lateinit var leaderboardRepository: LeaderboardRepository
+        private set
+
     /** Called from [com.reprise.app.RepRiseApplication]. Safe to call twice. */
     fun init(context: Context) {
         if (initialized) return
@@ -60,6 +64,7 @@ object AppModule {
         workoutRepository = WorkoutRepository(api = api)
         progressionRepository = ProgressionRepository(api = api)
         friendRepository = FriendRepository(api = api)
+        leaderboardRepository = LeaderboardRepository(api = api)
 
         initialized = true
     }

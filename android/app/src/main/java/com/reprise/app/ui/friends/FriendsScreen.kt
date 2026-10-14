@@ -1,5 +1,6 @@
 package com.reprise.app.ui.friends
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,10 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
@@ -23,7 +25,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -49,6 +50,7 @@ import com.reprise.app.components.EmptyState
 import com.reprise.app.components.ErrorBanner
 import com.reprise.app.components.RepRiseCard
 import com.reprise.app.components.ScreenContainer
+import com.reprise.app.components.UserAvatar
 import com.reprise.app.domain.model.FriendRequest
 import com.reprise.app.domain.model.FriendRequestDirection
 import com.reprise.app.domain.model.FriendRequests
@@ -56,12 +58,16 @@ import com.reprise.app.domain.model.UserSummary
 import com.reprise.app.ui.theme.RepRiseTheme
 
 /**
- * The Friends tab (Phase 6a).
+ * The Friends tab (Phase 6a), plus the entry point to the weekly leaderboard
+ * (Phase 6b).
  *
  * Three things live on one screen, in the order a person actually needs them:
  *   1. a search box, to find someone by username and send a request,
  *   2. the requests waiting for an answer,
  *   3. the friend list itself (plus requests you sent, so they can be withdrawn).
+ *
+ * A card at the top opens the weekly leaderboard, which is a pushed screen of
+ * its own (see [com.reprise.app.ui.leaderboard.LeaderboardScreen]).
  *
  * Every rule about who may befriend whom is enforced by the SERVER; this file
  * only draws the state and forwards taps, which is why it can stay thin.
@@ -69,6 +75,7 @@ import com.reprise.app.ui.theme.RepRiseTheme
 @Composable
 fun FriendsScreen(
     modifier: Modifier = Modifier,
+    onOpenLeaderboard: () -> Unit = {},
     viewModel: FriendsViewModel = viewModel(factory = FriendsViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -88,6 +95,7 @@ fun FriendsScreen(
             onDeleteRequest = viewModel::deleteRequest,
             onRemoveFriend = viewModel::removeFriend,
         ),
+        onOpenLeaderboard = onOpenLeaderboard,
         modifier = modifier,
     )
 }
@@ -113,6 +121,7 @@ private data class FriendsActions(
 private fun FriendsContent(
     state: FriendsUiState,
     actions: FriendsActions,
+    onOpenLeaderboard: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // Which friend the "Remove friend?" dialog is about, if any.
@@ -134,6 +143,8 @@ private fun FriendsContent(
                 onAction = actions.onDismissError,
             )
         }
+
+        LeaderboardCard(onOpen = onOpenLeaderboard)
 
         SearchCard(state, actions)
 
@@ -180,6 +191,47 @@ private fun FriendsContent(
             },
             onDismiss = { pendingRemoval = null },
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Leaderboard entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * A tappable card that opens the weekly leaderboard.
+ *
+ * Shown above the search box because the week's standings are the thing a
+ * returning user wants to see first; searching is a one-off task.
+ */
+@Composable
+private fun ColumnScope.LeaderboardCard(onOpen: () -> Unit) {
+    RepRiseCard(modifier = Modifier.clickable(onClick = onOpen)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                painter = painterResource(R.drawable.ic_leaderboard),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.leaderboard_card_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = stringResource(R.string.leaderboard_card_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
     }
 }
 
@@ -459,7 +511,7 @@ private fun UserRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Avatar(user)
+        UserAvatar(displayName = user.displayName, username = user.username)
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
@@ -479,29 +531,6 @@ private fun UserRow(
         }
 
         trailing()
-    }
-}
-
-/**
- * A coloured circle with the person's initial.
- *
- * There is no image-loading library in the project, so `profileImageUrl` is not
- * rendered; the initial is a deliberate, dependency-free stand-in.
- */
-@Composable
-private fun Avatar(user: UserSummary) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.size(40.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = initialOf(user),
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimary,
-            )
-        }
     }
 }
 
@@ -534,12 +563,6 @@ private fun CenteredLoader() {
     ) {
         CircularProgressIndicator()
     }
-}
-
-/** The first letter of a display name, falling back to the username. */
-private fun initialOf(user: UserSummary): String {
-    val fromName = user.displayName.trim().take(1)
-    return (if (fromName.isNotBlank()) fromName else user.username.take(1)).uppercase()
 }
 
 // ---------------------------------------------------------------------------
@@ -581,6 +604,7 @@ private fun FriendsContentPreview() {
                 onDeleteRequest = {},
                 onRemoveFriend = {},
             ),
+            onOpenLeaderboard = {},
         )
     }
 }

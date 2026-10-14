@@ -117,4 +117,36 @@ class FormattingTest {
         assertEquals("-2", formatSignedInt(-2))
         assertEquals("0", formatSignedInt(0))
     }
+
+    @Test
+    fun `a week range shows the inclusive last day within one month`() {
+        // The server's `endDate` is the NEXT Monday (exclusive), so the range
+        // must read 12–18, not 12–19.
+        assertEquals(
+            "12–18 Oct 2026",
+            formatWeekRange("2026-10-12T00:00:00.000Z", "2026-10-19T00:00:00.000Z", Locale.US),
+        )
+    }
+
+    @Test
+    fun `a week range that crosses a month names both months`() {
+        assertEquals(
+            "28 Sep – 4 Oct 2026",
+            formatWeekRange("2026-09-28T00:00:00.000Z", "2026-10-05T00:00:00.000Z", Locale.US),
+        )
+    }
+
+    @Test
+    fun `a week range that crosses a year names both years`() {
+        assertEquals(
+            "28 Dec 2026 – 3 Jan 2027",
+            formatWeekRange("2026-12-28T00:00:00.000Z", "2027-01-04T00:00:00.000Z", Locale.US),
+        )
+    }
+
+    @Test
+    fun `a week range is blank when either end cannot be parsed`() {
+        assertEquals("", formatWeekRange("nonsense", "2026-10-19T00:00:00.000Z", Locale.US))
+        assertEquals("", formatWeekRange("2026-10-12T00:00:00.000Z", null, Locale.US))
+    }
 }

@@ -37,3 +37,11 @@ fun workoutEditorRoute(workoutId: String? = null): String =
  * encoding it into a route would add nothing.
  */
 const val PROGRESSION_ROUTE = "progression"
+
+/**
+ * The weekly leaderboard (Phase 6b).
+ *
+ * Opened from the Friends tab. It carries no arguments: the board is always "me
+ * plus my friends this week", so there is nothing to parameterise.
+ */
+const val LEADERBOARD_ROUTE = "leaderboard"

@@ -90,6 +90,14 @@ async function countWeightEntries(userId) {
     .countDocuments({ userId: new ObjectId(userId) });
 }
 
+/** Count a user's workouts straight from the database (for assertions). */
+async function countWorkouts(userId) {
+  const db = getDb();
+  return db
+    .collection(COLLECTIONS.WORKOUTS)
+    .countDocuments({ userId: new ObjectId(userId) });
+}
+
 /** Read one user document straight from the database (for assertions). */
 async function findUserDoc(usernameNormalized) {
   const db = getDb();
@@ -101,6 +109,7 @@ module.exports = {
   deleteUsersByPrefix,
   deleteUserDataByPrefix,
   countWeightEntries,
+  countWorkouts,
   findUserDoc,
   close,
 };

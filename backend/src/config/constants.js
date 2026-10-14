@@ -77,6 +77,39 @@ const BMI_UNDERWEIGHT_MAX = 18.5;
 const BMI_NORMAL_MAX = 25;
 const BMI_OVERWEIGHT_MAX = 30;
 
+/**
+ * Workout logging limits.
+ *
+ * These are deliberately generous — the point is to reject nonsense (a 10 000
+ * character workout name, a set of 5 million reps) without getting in the way of
+ * any realistic training session.
+ */
+const WORKOUT_NAME_MAX_LENGTH = 80;
+const WORKOUT_NOTES_MAX_LENGTH = 500;
+const WORKOUT_MIN_MINUTES = 1;
+const WORKOUT_MAX_MINUTES = 600;
+const WORKOUT_MAX_EXERCISES = 30;
+
+const EXERCISE_NAME_MAX_LENGTH = 60;
+const EXERCISE_NOTES_MAX_LENGTH = 200;
+const EXERCISE_REST_MAX_SECONDS = 3600;
+const EXERCISE_MAX_SETS = 30;
+
+/**
+ * A set is `reps x weight`. The weight is the load the user actually put on the
+ * bar, so it is checked against the plausible range for the EXERCISE's unit.
+ *
+ * Zero is allowed on purpose: bodyweight movements (push-ups, pull-ups) and an
+ * empty bar are both legitimate "0 added weight" sets.
+ */
+const SET_REPS_MIN = 1;
+const SET_REPS_MAX = 1000;
+const SET_WEIGHT_KG_MAX = 1000;
+const SET_WEIGHT_LB_MAX = 2205;
+
+/** How far back the dashboard's "recent training" numbers look. */
+const WORKOUT_RECENT_DAYS = 7;
+
 module.exports = {
   FITNESS_GOALS,
   WEIGHT_UNITS,
@@ -96,4 +129,18 @@ module.exports = {
   BMI_UNDERWEIGHT_MAX,
   BMI_NORMAL_MAX,
   BMI_OVERWEIGHT_MAX,
+  WORKOUT_NAME_MAX_LENGTH,
+  WORKOUT_NOTES_MAX_LENGTH,
+  WORKOUT_MIN_MINUTES,
+  WORKOUT_MAX_MINUTES,
+  WORKOUT_MAX_EXERCISES,
+  EXERCISE_NAME_MAX_LENGTH,
+  EXERCISE_NOTES_MAX_LENGTH,
+  EXERCISE_REST_MAX_SECONDS,
+  EXERCISE_MAX_SETS,
+  SET_REPS_MIN,
+  SET_REPS_MAX,
+  SET_WEIGHT_KG_MAX,
+  SET_WEIGHT_LB_MAX,
+  WORKOUT_RECENT_DAYS,
 };

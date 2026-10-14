@@ -6,9 +6,9 @@
  * Phase 1: /api/health
  * Phase 2: /api/auth, /api/users
  * Phase 3: /api/weights, /api/dashboard
+ * Phase 4: /api/workouts
  *
  * Later phases will add:
- *   router.use('/workouts', require('./workouts.routes'));
  *   router.use('/friends', require('./friends.routes'));
  *   router.use('/leaderboard', require('./leaderboard.routes'));
  */
@@ -25,6 +25,7 @@ router.use('/health', require('./health.routes'));
 router.use('/auth', require('./auth.routes'));
 router.use('/users', require('./users.routes'));
 router.use('/weights', require('./weights.routes'));
+router.use('/workouts', require('./workouts.routes'));
 router.use('/dashboard', require('./dashboard.routes'));
 
 module.exports = router;

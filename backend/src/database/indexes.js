@@ -41,6 +41,15 @@ async function ensureIndexes() {
   await db
     .collection(COLLECTIONS.WORKOUTS)
     .createIndex({ userId: 1, workoutDate: -1 }, { name: 'user_workout_recent' });
+  // Per-exercise history ("every session that included Bench Press"), which
+  // powers the progression advice in Phase 5. `exercises.name` is a multikey
+  // index; a compound index may contain at most ONE array field, and this is it.
+  await db
+    .collection(COLLECTIONS.WORKOUTS)
+    .createIndex(
+      { userId: 1, 'exercises.name': 1, workoutDate: -1 },
+      { name: 'user_exercise_recent' }
+    );
 
   // ---- friendships -------------------------------------------------------
   // A friendship row is stored once, from the requester's perspective.

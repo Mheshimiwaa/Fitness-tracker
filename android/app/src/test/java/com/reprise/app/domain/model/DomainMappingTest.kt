@@ -2,6 +2,7 @@ package com.reprise.app.domain.model
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -48,6 +49,40 @@ class DomainMappingTest {
         assertEquals(WeightUnit.LB, WeightUnit.fromApi("lb"))
         assertEquals(WeightUnit.KG, WeightUnit.fromApi("stone"))
         assertEquals(WeightUnit.KG, WeightUnit.fromApi(null))
+    }
+
+    @Test
+    fun `bmi categories match the server contract`() {
+        // These strings are produced by backend/src/services/bmi.service.js and
+        // must stay in step with it.
+        assertEquals(
+            setOf("underweight", "normal", "overweight", "obese"),
+            BmiCategory.entries.map { it.apiValue }.toSet(),
+        )
+    }
+
+    @Test
+    fun `bmi category maps every known api value`() {
+        assertEquals(BmiCategory.UNDERWEIGHT, BmiCategory.fromApi("underweight"))
+        assertEquals(BmiCategory.NORMAL, BmiCategory.fromApi("normal"))
+        assertEquals(BmiCategory.OVERWEIGHT, BmiCategory.fromApi("overweight"))
+        assertEquals(BmiCategory.OBESE, BmiCategory.fromApi("obese"))
+    }
+
+    @Test
+    fun `bmi category rejects unknown and missing values`() {
+        // Unlike a goal, a wrong BMI category would be actively misleading, so
+        // there is deliberately no fallback: null means "do not show a BMI".
+        assertNull(BmiCategory.fromApi("greek_god"))
+        assertNull(BmiCategory.fromApi(null))
+    }
+
+    @Test
+    fun `bmi unavailable reason maps known values`() {
+        assertEquals(BmiUnavailableReason.NO_HEIGHT, BmiUnavailableReason.fromApi("no_height"))
+        assertEquals(BmiUnavailableReason.NO_WEIGHT, BmiUnavailableReason.fromApi("no_weight"))
+        assertEquals(BmiUnavailableReason.UNKNOWN, BmiUnavailableReason.fromApi("who_knows"))
+        assertNull(BmiUnavailableReason.fromApi(null))
     }
 
     @Test

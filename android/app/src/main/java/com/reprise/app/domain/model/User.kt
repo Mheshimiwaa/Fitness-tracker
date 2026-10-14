@@ -44,9 +44,11 @@ enum class FitnessGoal(
 enum class WeightUnit(
     val apiValue: String,
     @param:StringRes val labelRes: Int,
+    /** The compact form used inline with a value, e.g. "82.4 kg". */
+    @param:StringRes val shortLabelRes: Int,
 ) {
-    KG("kg", R.string.unit_kg),
-    LB("lb", R.string.unit_lb);
+    KG("kg", R.string.unit_kg, R.string.unit_kg_short),
+    LB("lb", R.string.unit_lb, R.string.unit_lb_short);
 
     companion object {
         fun fromApi(value: String?): WeightUnit =

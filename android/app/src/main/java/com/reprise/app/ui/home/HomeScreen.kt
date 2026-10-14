@@ -1,31 +1,323 @@
 package com.reprise.app.ui.home
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.reprise.app.R
-import com.reprise.app.components.EmptyState
+import com.reprise.app.components.ErrorBanner
+import com.reprise.app.components.RepRiseCard
 import com.reprise.app.components.ScreenContainer
+import com.reprise.app.domain.model.Bmi
+import com.reprise.app.domain.model.BmiCategory
+import com.reprise.app.domain.model.BmiUnavailableReason
+import com.reprise.app.domain.model.Dashboard
+import com.reprise.app.domain.model.User
+import com.reprise.app.domain.model.WeightChange
+import com.reprise.app.domain.model.WeightEntry
+import com.reprise.app.domain.model.WeightUnit
 import com.reprise.app.ui.theme.RepRiseTheme
+import com.reprise.app.util.formatShortDate
+import com.reprise.app.util.formatSignedWeight
+import com.reprise.app.util.formatWeight
 
 /**
  * Home / Dashboard.
  *
- * Phase 1 placeholder. From Phase 3 onward this screen will show the greeting,
- * latest weight, BMI, weekly workout count, streak, leaderboard position and
- * quick actions — all loaded from GET /api/dashboard.
+ * Shows the signed-in user a real summary loaded from `GET /api/dashboard`:
+ * their latest body weight, the change over the last 30 days, and their BMI.
  *
- * It shows an honest empty state for now: no fabricated fitness numbers.
+ * Every number here comes from the server — there is no fabricated data, and
+ * empty sections explain what to do next rather than showing a fake value.
  */
 @Composable
-fun HomeScreen() {
-    ScreenContainer(title = stringResource(R.string.title_home)) {
-        EmptyState(
-            icon = Icons.Filled.Info,
-            title = stringResource(R.string.empty_home_title),
-            message = stringResource(R.string.empty_home_message),
+fun HomeScreen(
+    user: User,
+    onOpenWeights: () -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: DashboardViewModel = viewModel(factory = DashboardViewModel.Factory),
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Runs on first composition AND whenever the user returns to this screen,
+    // so a weight logged elsewhere shows up without a manual refresh.
+    LaunchedEffect(Unit) { viewModel.refresh() }
+
+    ScreenContainer(
+        title = stringResource(R.string.home_greeting, user.displayName),
+        modifier = modifier,
+    ) {
+        Text(
+            text = stringResource(R.string.home_subtitle),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        state.errorMessage?.let { message ->
+            ErrorBanner(
+                message = message,
+                actionLabel = stringResource(R.string.action_retry),
+                onAction = viewModel::refresh,
+            )
+        }
+
+        when (val dashboard = state.dashboard) {
+            null -> LoadingCards()
+            else -> {
+                WeightCard(dashboard = dashboard, onOpenWeights = onOpenWeights)
+                BmiCard(dashboard = dashboard)
+            }
+        }
+    }
+}
+
+/** A centred spinner shown before the first successful load. */
+@Composable
+private fun LoadingCards() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 32.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** Latest weight, direction of travel, and the two primary actions. */
+@Composable
+private fun WeightCard(
+    dashboard: Dashboard,
+    onOpenWeights: () -> Unit,
+) {
+    RepRiseCard {
+        CardHeader(
+            title = stringResource(R.string.home_weight_title),
+            leading = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_scale),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            },
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        val latest = dashboard.latestWeight
+        if (latest == null) {
+            Text(
+                text = stringResource(R.string.home_weight_none_title),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.home_weight_none_message),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            WeightValue(entry = latest)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = formatShortDate(latest.measuredAt),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            ChangeLine(dashboard = dashboard)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.home_weight_entries, dashboard.weightEntryCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = onOpenWeights) {
+                Text(text = stringResource(R.string.home_action_log_weight))
+            }
+            if (dashboard.weightEntryCount > 0) {
+                OutlinedButton(onClick = onOpenWeights) {
+                    Text(text = stringResource(R.string.home_action_view_history))
+                }
+            }
+        }
+    }
+}
+
+/** The big "82.4 kg" reading. */
+@Composable
+private fun WeightValue(entry: WeightEntry) {
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            text = formatWeight(entry.weight),
+            style = MaterialTheme.typography.headlineLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(
+            text = stringResource(entry.unit.shortLabelRes),
+            modifier = Modifier.padding(bottom = 6.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * The change over the dashboard window.
+ *
+ * The arrow shows DIRECTION only — it is deliberately not coloured green or red,
+ * because whether gaining or losing is "good" depends entirely on the person's
+ * goal. The app tracks; it does not judge.
+ */
+@Composable
+private fun ChangeLine(dashboard: Dashboard) {
+    val change = dashboard.weightChange
+    if (change == null) {
+        Text(
+            text = stringResource(R.string.home_weight_no_change),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        if (change.amount != 0.0) {
+            Icon(
+                imageVector = if (change.amount < 0) {
+                    Icons.Filled.KeyboardArrowDown
+                } else {
+                    Icons.Filled.KeyboardArrowUp
+                },
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Text(
+            text = "${formatSignedWeight(change.amount)} ${stringResource(change.unit.shortLabelRes)}",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = stringResource(R.string.home_weight_window, dashboard.changeWindowDays),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** BMI, or an explanation of what is still missing. */
+@Composable
+private fun BmiCard(dashboard: Dashboard) {
+    RepRiseCard {
+        CardHeader(
+            title = stringResource(R.string.home_bmi_title),
+            leading = {
+                Icon(
+                    imageVector = Icons.Filled.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            },
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        when (val bmi = dashboard.bmi) {
+            null -> Text(
+                text = stringResource(missingBmiRes(dashboard.bmiUnavailableReason)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            else -> {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text(
+                        text = formatWeight(bmi.value),
+                        style = MaterialTheme.typography.headlineLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(bmi.category.labelRes),
+                        modifier = Modifier.padding(bottom = 6.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(bmi.category.descriptionRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = stringResource(R.string.home_bmi_disclaimer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** Which explanation to show when there is no BMI yet. */
+private fun missingBmiRes(reason: BmiUnavailableReason?): Int = when (reason) {
+    BmiUnavailableReason.NO_HEIGHT -> R.string.home_bmi_needs_height
+    else -> R.string.home_bmi_needs_weight
+}
+
+/** A card title with a leading icon. */
+@Composable
+private fun CardHeader(
+    title: String,
+    leading: @Composable () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        leading()
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
@@ -33,5 +325,70 @@ fun HomeScreen() {
 @Preview(showBackground = true)
 @Composable
 private fun HomeScreenPreview() {
-    RepRiseTheme { HomeScreen() }
+    RepRiseTheme {
+        ScreenContainer(title = "Hi, Alex Lifter") {
+            WeightCard(
+                dashboard = Dashboard(
+                    latestWeight = WeightEntry(
+                        id = "1",
+                        weight = 82.4,
+                        unit = WeightUnit.KG,
+                        weightKg = 82.4,
+                        measuredAt = "2026-10-14T08:33:57.367Z",
+                        note = "morning",
+                    ),
+                    previousWeight = null,
+                    weightEntryCount = 3,
+                    changeWindowDays = 30,
+                    weightChange = WeightChange(amount = -2.4, unit = WeightUnit.KG),
+                    bmi = null,
+                    bmiUnavailableReason = null,
+                ),
+                onOpenWeights = {},
+            )
+            BmiCard(
+                dashboard = Dashboard(
+                    latestWeight = null,
+                    previousWeight = null,
+                    weightEntryCount = 0,
+                    changeWindowDays = 30,
+                    weightChange = null,
+                    bmi = Bmi(value = 25.4, category = BmiCategory.OVERWEIGHT),
+                    bmiUnavailableReason = null,
+                ),
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun HomeScreenEmptyPreview() {
+    RepRiseTheme {
+        ScreenContainer(title = "Home") {
+            WeightCard(
+                dashboard = Dashboard(
+                    latestWeight = null,
+                    previousWeight = null,
+                    weightEntryCount = 0,
+                    changeWindowDays = 30,
+                    weightChange = null,
+                    bmi = null,
+                    bmiUnavailableReason = BmiUnavailableReason.NO_HEIGHT,
+                ),
+                onOpenWeights = {},
+            )
+            BmiCard(
+                dashboard = Dashboard(
+                    latestWeight = null,
+                    previousWeight = null,
+                    weightEntryCount = 0,
+                    changeWindowDays = 30,
+                    weightChange = null,
+                    bmi = null,
+                    bmiUnavailableReason = BmiUnavailableReason.NO_HEIGHT,
+                ),
+            )
+        }
+    }
 }

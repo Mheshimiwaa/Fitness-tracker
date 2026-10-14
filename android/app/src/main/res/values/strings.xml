@@ -15,8 +15,6 @@
     <string name="title_profile">Profile</string>
 
     <!-- Empty-state copy (Phase 1 placeholders; filled in as features land) -->
-    <string name="empty_home_title">Your dashboard is ready</string>
-    <string name="empty_home_message">Log a weight entry or record a workout to see your progress here.</string>
     <string name="empty_workouts_title">No workouts yet</string>
     <string name="empty_workouts_message">Your logged strength sessions will appear here.</string>
     <string name="empty_friends_title">No friends yet</string>
@@ -75,4 +73,71 @@
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+
+    <!-- Weight units (short form, for inline values such as "82.4 kg") -->
+    <string name="unit_kg_short">kg</string>
+    <string name="unit_lb_short">lb</string>
+
+    <!-- Dashboard (Home) -->
+    <string name="home_greeting">Hi, %1$s</string>
+    <string name="home_subtitle">Here\'s your progress at a glance.</string>
+    <string name="home_weight_title">Body weight</string>
+    <string name="home_weight_none_title">No weigh-ins yet</string>
+    <string name="home_weight_none_message">Log your first weight to start tracking your progress over time.</string>
+    <string name="home_weight_window">Last %1$d days</string>
+    <string name="home_weight_no_change">Not enough entries to compare yet.</string>
+    <string name="home_weight_entries">%1$d logged</string>
+    <string name="home_action_log_weight">Log weight</string>
+    <string name="home_action_view_history">View history</string>
+    <string name="home_bmi_title">BMI</string>
+    <string name="home_bmi_needs_height">Add your height in your profile to calculate your BMI.</string>
+    <string name="home_bmi_needs_weight">Log a weight to calculate your BMI.</string>
+    <string name="home_bmi_disclaimer">BMI is a general screening measure. It does not tell muscle apart from fat, and it is not medical advice.</string>
+    <string name="action_retry">Try again</string>
+
+    <!-- Weight history screen -->
+    <string name="title_weight">Weight</string>
+    <string name="weights_period_7">7 days</string>
+    <string name="weights_period_30">30 days</string>
+    <string name="weights_period_90">90 days</string>
+    <string name="weights_period_all">All time</string>
+    <string name="weights_summary_latest">Latest</string>
+    <string name="weights_summary_change">Change</string>
+    <string name="weights_summary_entries">Entries</string>
+    <string name="weights_summary_none">—</string>
+    <string name="weights_log_button">Log weight</string>
+    <string name="weights_chart_title">Trend</string>
+    <string name="weights_chart_high">High %1$s</string>
+    <string name="weights_chart_low">Low %1$s</string>
+    <string name="weights_chart_hint">Log at least two weigh-ins to see your trend line.</string>
+    <string name="weights_history_title">History</string>
+    <string name="weights_empty_title">No entries yet</string>
+    <string name="weights_empty_message">Your weigh-ins will appear here, newest first.</string>
+    <string name="weights_add_title">Log weight</string>
+    <string name="weights_edit_title">Edit entry</string>
+    <string name="weights_field_weight">Weight (%1$s)</string>
+    <string name="weights_field_note">Note (optional)</string>
+    <string name="weights_field_note_hint">e.g. morning, fasted</string>
+    <string name="weights_error_weight_required">Enter your weight.</string>
+    <string name="weights_error_weight_invalid">Enter a valid number.</string>
+    <string name="weights_error_weight_positive">Weight must be greater than zero.</string>
+    <string name="weights_delete_title">Delete this entry?</string>
+    <string name="weights_delete_message">This weigh-in will be removed permanently.</string>
+
+    <!-- Shared actions -->
+    <string name="action_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_save_short">Save</string>
+
+    <!-- BMI categories (adult WHO bands, neutral descriptions only) -->
+    <string name="bmi_underweight">Underweight</string>
+    <string name="bmi_underweight_desc">Below the WHO normal range</string>
+    <string name="bmi_normal">Normal</string>
+    <string name="bmi_normal_desc">Within the WHO normal range</string>
+    <string name="bmi_overweight">Overweight</string>
+    <string name="bmi_overweight_desc">Above the WHO normal range</string>
+    <string name="bmi_obese">Obese</string>
+    <string name="bmi_obese_desc">Within the WHO obese range</string>
 </resources>

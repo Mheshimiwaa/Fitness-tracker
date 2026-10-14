@@ -100,4 +100,52 @@ class ApiCallTest {
         // statusCode == null is how the UI tells "never arrived" from "rejected".
         assertNull(failure.statusCode)
     }
+
+    // --- apiCallUnit: endpoints that answer 204 No Content -------------------
+
+    /**
+     * A real 204, built by hand. Retrofit short-circuits 204/205 to a SUCCESS
+     * with a null body, so this is exactly what a `DELETE /api/weights/:id`
+     * produces — and the case [apiCall] alone would misread as a failure.
+     */
+    private fun noContentResponse(): Response<Unit> {
+        val request = okhttp3.Request.Builder()
+            .url("http://localhost/api/weights/000000000000000000000000")
+            .build()
+        val raw = okhttp3.Response.Builder()
+            .request(request)
+            .protocol(okhttp3.Protocol.HTTP_1_1)
+            .code(204)
+            .message("No Content")
+            .build()
+
+        return retrofit2.Response.success(null, raw)
+    }
+
+    @Test
+    fun `apiCallUnit treats a 204 with no body as success`() = runBlocking {
+        val result = apiCallUnit { noContentResponse() }
+
+        assertEquals(ApiResult.Success(Unit), result)
+    }
+
+    @Test
+    fun `apiCallUnit still reads the server message on failure`() = runBlocking {
+        val body = """{"error":{"message":"Weight entry not found."}}"""
+
+        val result = apiCallUnit { errorResponse(404, body) }
+
+        val failure = result as ApiResult.Failure
+        assertEquals("Weight entry not found.", failure.message)
+        assertEquals(404, failure.statusCode)
+    }
+
+    @Test
+    fun `apiCallUnit turns an IOException into a network failure`() = runBlocking {
+        val result = apiCallUnit { throw IOException("connection refused") }
+
+        val failure = result as ApiResult.Failure
+        assertTrue(failure.message.contains("Can't reach the server"))
+        assertNull(failure.statusCode)
+    }
 }

@@ -5,6 +5,7 @@ import com.reprise.app.data.local.SettingsStore
 import com.reprise.app.data.local.TokenStore
 import com.reprise.app.data.remote.ApiClient
 import com.reprise.app.data.repository.AuthRepository
+import com.reprise.app.data.repository.WeightRepository
 
 /**
  * A tiny hand-written dependency container ("service locator").
@@ -29,6 +30,9 @@ object AppModule {
     lateinit var authRepository: AuthRepository
         private set
 
+    lateinit var weightRepository: WeightRepository
+        private set
+
     /** Called from [com.reprise.app.RepRiseApplication]. Safe to call twice. */
     fun init(context: Context) {
         if (initialized) return
@@ -36,10 +40,11 @@ object AppModule {
         val appContext = context.applicationContext
         tokenStore = TokenStore(appContext)
         settingsStore = SettingsStore(appContext)
-        authRepository = AuthRepository(
-            api = ApiClient.create(tokenStore),
-            tokenStore = tokenStore,
-        )
+
+        // One Retrofit client, shared by every repository.
+        val api = ApiClient.create(tokenStore)
+        authRepository = AuthRepository(api = api, tokenStore = tokenStore)
+        weightRepository = WeightRepository(api = api)
 
         initialized = true
     }

@@ -4,7 +4,7 @@ RepRise is a beginner-friendly Android fitness-tracking application built with *
 
 It lets users track body weight, calculate BMI, log strength workouts, get **progressive overload** suggestions, and compete with friends on a weekly leaderboard — inspired by Duolingo's consistency-based social motivation.
 
-> **Project status:** Phases 1 and 2 are complete and verified. Phase 2 includes the authentication/profile **backend**, the Android **auth screens** (register, login, session restore, logout), the signed-in profile screen, and a theme switcher. See [Implementation phases](#implementation-phases).
+> **Project status:** Phases 1, 2 and 3 are complete and verified. Phase 3 adds **body-weight tracking**, **BMI** and the **dashboard** on both sides — REST endpoints, an aggregated `GET /api/dashboard`, a real Home tab, and a Weight screen with add/edit/delete, a period selector and a hand-drawn trend chart. See [Implementation phases](#implementation-phases).
 
 ---
 
@@ -47,9 +47,9 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 |---|---|
 | Registration, login, logout, JWT-protected endpoints | ✅ Phase 2 |
 | Editable profile — rename yourself in-app; goal/unit/height via the API | ✅ Phase 2 |
-| Dashboard summary with honest empty states | Planned (Phase 3) |
-| Body-weight tracking (CRUD, kg/lb, history, chart, period change) | Planned (Phase 3) |
-| BMI from latest weight + height, with adult categories & disclaimers | Planned (Phase 3) |
+| Dashboard summary with honest empty states | ✅ Phase 3 |
+| Body-weight tracking (CRUD, kg/lb, history, chart, period change) | ✅ Phase 3 |
+| BMI from latest weight + height, with adult categories & disclaimers | ✅ Phase 3 |
 | Workout logging (workout → exercises → sets of weight × reps) | Planned (Phase 4) |
 | Progressive overload comparison + rule-based suggestions | Planned (Phase 5) |
 | Friends (search, request, accept/reject, list, remove) | Planned (Phase 6) |
@@ -141,7 +141,7 @@ database (MongoDB collections + indexes)
 central error handler → consistent JSON error shape
 ```
 
-### Android request flow (Phase 2)
+### Android request flow
 
 ```
 MainActivity
@@ -166,6 +166,27 @@ Retrofit (RepRiseApi) ──► OkHttp ──┬─ AuthInterceptor adds "Bearer
 - On launch the app calls `GET /api/auth/me` to confirm the stored token. A rejected token is deleted and the user is shown the login screen, so there is no half-signed-in state.
 - The session is a single `StateFlow` observed by the UI. Signing in or out swaps the whole composable tree, so the auth screens (and anything typed into them) cannot be reached again with the back button.
 - **Errors are values, not exceptions** — `apiCall()` converts every outcome into an `ApiResult`; the server's `error.message` is shown to the user, and per-field validation messages are attached to the matching text box.
+
+### Android request flow (Phase 3 — dashboard & weight)
+
+```
+Home tab                              Weight screen
+   │  LaunchedEffect(Unit)                │  init { refresh() }
+   ▼                                      ▼
+DashboardViewModel                     WeightsViewModel  (list + add/edit/delete form)
+   │  dashboard()                         │  history() / addWeight() / updateWeight() / deleteWeight()
+   ▼                                      ▼
+WeightRepository ── maps DTOs ⇄ domain models ──► Retrofit ──► OkHttp
+   │
+   ▼
+DashboardUiState / WeightsUiState  (StateFlow, immutable)  ──►  Compose screens
+```
+
+- The **repository is the only** place that knows about `...Dto` types; screens only ever see `Dashboard`, `WeightEntry`, `WeightChange` and `Bmi`.
+- `DELETE /api/weights/:id` answers **204 No Content**, so it goes through `apiCallUnit()`, which judges success by the status code rather than by a body.
+- The Home tab re-fetches whenever it re-enters composition, so a weight logged on the Weight screen appears on the dashboard as soon as the user navigates back.
+- The trend line is drawn with Compose's `Canvas` (`components/WeightChart.kt`) — **no charting dependency**.
+- **Unit conversion happens on the server.** A reading is stored exactly as entered (value + unit) and converted to the user's *current* preferred unit when read, so changing kg ⇄ lb never rewrites history.
 
 ---
 
@@ -195,16 +216,21 @@ reprise/
 │               ├── di/AppModule.kt        # hand-written service locator
 │               ├── navigation/            # RepRiseApp (auth gate), MainScaffold,
 │               │                          # AuthNavHost, destinations
-│               ├── domain/model/          # User, AuthState, ThemeMode, enums
+│               ├── domain/model/          # User, AuthState, ThemeMode, Weight, enums
 │               ├── data/
 │               │   ├── remote/            # RepRiseApi, ApiClient, AuthInterceptor,
 │               │   │                      # ApiResult + ApiCall (error parsing), dto/
 │               │   ├── local/             # TokenStore (encrypted), SettingsStore
-│               │   └── repository/        # AuthRepository (session source of truth)
+│               │   └── repository/        # AuthRepository (session source of truth),
+│               │                          # WeightRepository (weight + dashboard)
+│               ├── util/                  # Formatting (ISO dates, kg/lb numbers)
 │               ├── ui/theme/              # Color, Type, Theme, SettingsViewModel
 │               ├── ui/auth/               # LoginScreen, RegisterScreen, AuthViewModel
-│               ├── ui/{home,workouts,friends,profile}/…
-│               └── components/            # reusable Compose widgets
+│               ├── ui/home/               # HomeScreen (dashboard) + DashboardViewModel
+│               ├── ui/weights/            # WeightsScreen + WeightsViewModel
+│               ├── ui/{workouts,friends,profile}/…
+│               └── components/            # reusable Compose widgets (ScreenContainer,
+│                                          # DetailScreen, RepRiseCard, WeightChart, …)
 └── backend/
     ├── package.json
     ├── .env.example                       # placeholders only — never real secrets
@@ -213,19 +239,20 @@ reprise/
     │   ├── app.js                         # Express app + middleware + routes
     │   ├── config/
     │   │   ├── env.js                     # central env loading & validation
-    │   │   └── constants.js               # shared rules (goals, units, patterns)
+    │   │   └── constants.js               # shared rules (goals, units, ranges, BMI bands)
     │   ├── database/                      # connection, collections, indexes
     │   ├── middleware/                    # requestLogger, notFound, errorHandler,
     │   │                                  # authenticate, validate, rateLimiter
-    │   ├── routes/                        # index, health, auth, users
-    │   ├── controllers/                   # auth, users
-    │   ├── services/                      # auth, user
-    │   ├── validators/                    # common.fields, auth, user (Zod)
-    │   └── utils/                         # logger, ApiError, password, token
+    │   ├── routes/                        # index, health, auth, users, weights, dashboard
+    │   ├── controllers/                   # auth, users, weights, dashboard
+    │   ├── services/                      # auth, user, weight, bmi, dashboard
+    │   ├── validators/                    # common.fields, auth, user, weight (Zod)
+    │   └── utils/                         # logger, ApiError, password, token, units
     └── tests/
         ├── helpers/                       # setup, app, db (shared test utilities)
         ├── health.test.js
-        └── auth.test.js
+        ├── auth.test.js
+        └── weights.test.js
 ```
 
 ---
@@ -417,12 +444,59 @@ Rules enforced by the server:
 - `/api/users/me` only ever reads or writes the **caller's own** document.
 - Auth endpoints are rate-limited (`20` requests / 15 min / IP in normal use).
 
-### Planned (Phases 3–7)
+### Implemented (Phase 3 — weight tracking, BMI & dashboard)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/weights` | yes | log a weigh-in (`201`) |
+| GET | `/api/weights?days=&limit=&order=` | yes | my history + the change across the window |
+| GET | `/api/weights/latest` | yes | my most recent reading (or `entry: null`) |
+| GET | `/api/weights/:id` | yes | read one entry |
+| PATCH | `/api/weights/:id` | yes | edit an entry |
+| DELETE | `/api/weights/:id` | yes | delete an entry (`204`) |
+| GET | `/api/dashboard` | yes | the Home tab's aggregated summary |
+
+**Weight & dashboard flow**
+
+```
+POST  /api/weights   { weight, unit?, measuredAt?, note? }
+                     -> 201 { entry }
+GET   /api/weights?days=30
+                     -> 200 { entries, count, change, days }
+GET   /api/weights/latest
+                     -> 200 { entry }        // entry is null when nothing is logged
+PATCH /api/weights/:id  { weight?, unit?, measuredAt?, note? }
+                     -> 200 { entry }
+DELETE /api/weights/:id
+                     -> 204 (no body)
+GET   /api/dashboard
+                     -> 200 { weight:{latest,previous,entryCount,changeWindowDays,change}, bmi, bmiUnavailableReason }
+```
+
+A weight entry looks like this on the wire:
+
+```json
+{
+  "id": "6acf3e75fc7b216d6e75b330",
+  "weight": 82.4,          // the value to display, in `unit`
+  "unit": "kg",            // the user's CURRENT preferred unit
+  "weightKg": 82.4,        // the canonical kilograms (used for BMI)
+  "measuredAt": "2026-10-14T08:33:57.367Z",
+  "note": "morning"
+}
+```
+
+Rules enforced by the server:
+- `weight` is stored **exactly as entered** (value + unit). Reads convert to the user's *current* preferred unit, so switching kg ⇄ lb never rewrites history.
+- Values must be plausible for the stated unit (20–500 kg / 44–1102 lb), and `measuredAt` may be back-dated but not set in the future.
+- `unit` is optional: when omitted it defaults to the user's preferred unit.
+- **Ownership is enforced inside the query** (`{ _id, userId }`), so requesting somebody else's entry returns `404` — the same response as a non-existent id, so the API cannot be used to discover which ids exist.
+- `change` is `null` (not a misleading `0`) when the window holds fewer than two readings.
+- `bmi` is `null` when it cannot be computed, and `bmiUnavailableReason` is `"no_height"` or `"no_weight"`, so the app can say what is missing instead of showing a fake number.
+
+### Planned (Phases 4–7)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| POST/GET | `/api/weights` | yes | create / list weight entries |
-| GET/PATCH/DELETE | `/api/weights/:id` | yes | read / update / delete one entry |
 | POST/GET | `/api/workouts` | yes | create / list workouts |
 | GET/PATCH/DELETE | `/api/workouts/:id` | yes | read / update / delete a workout |
 | GET | `/api/workouts/:id/progression` | yes | progression vs. the previous session |
@@ -430,7 +504,8 @@ Rules enforced by the server:
 | GET/PATCH | `/api/friends/requests[/:id]` | yes | list / accept / reject requests |
 | GET/DELETE | `/api/friends[/:id]` | yes | list / remove friends |
 | GET | `/api/leaderboard/weekly` | yes | weekly friends leaderboard |
-| GET | `/api/dashboard` | yes | dashboard summary |
+
+> `GET /api/dashboard` already exists and will simply gain new sections (workouts, streak, leaderboard) as Phases 4–7 land — the app never has to be rewired.
 
 **Error shape** (every failure):
 
@@ -451,6 +526,7 @@ Account, profile and preferences. **One document per user.**
 
 ### `weight_entries`
 Body-weight history. `_id`, `userId`, `weight`, `unit`, `measuredAt`, `note?`, `createdAt`, `updatedAt`.
+*The value is stored **exactly as entered**, together with its unit — there is deliberately no denormalised `weightKg` column, because that would let the two copies of the same fact drift apart. Conversion to the display unit happens on every read (`src/utils/units.js`), which is trivially cheap for a per-user history.*
 
 ### `workouts`
 Workout sessions with embedded exercises and sets.
@@ -484,12 +560,13 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **19 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **39 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
+- **Phase 3** — weight schemas (per-unit range, future/back-dated timestamps, empty update bodies), `401` on every weight route, create/list/latest/read/update/delete, unit conversion after a preference change, ownership isolation (another user gets `404` and the owner's entry is untouched), BMI from height + latest weight, `bmiUnavailableReason`, and the 30-day change.
 
-> **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster, and every test user is deleted before and after the run. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
+> **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix`), so no orphaned weight entries accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
 **Android**
 
@@ -499,7 +576,7 @@ cd android
 ./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
 
-The JVM suite (**11 tests**) covers the parts where a mistake is invisible until
+The JVM suite (**36 tests**) covers the parts where a mistake is invisible until
 runtime:
 
 - **`ApiCallTest`** — every shape the API can answer with: a successful response,
@@ -508,9 +585,17 @@ runtime:
   (falls back to a status-based message), and an unreachable server (no status
   code). These run with no network and no emulator — the `Response` objects are
   built in code.
-- **`DomainMappingTest`** — pins the `fitnessGoal` / `weightUnit` strings to the
-  backend's contract, and checks the unknown-value fallbacks and the theme-mode
-  resolution.
+- **`ApiCallTest` (204)** — `apiCallUnit` treats a bodyless `204` as success while
+  still surfacing the server's message on a `404`.
+- **`DomainMappingTest`** — pins the `fitnessGoal` / `weightUnit` / BMI-category
+  strings to the backend's contract, and checks the unknown-value fallbacks and
+  the theme-mode resolution.
+- **`WeightRepositoryTest`** — drives a hand-written fake `RepRiseApi` to prove the
+  DTO ⇄ domain mapping: values, unit codes, the canonical `weightKg`, the BMI
+  category, a `null` change, the delete path, and that a rejection passes through
+  with the server's message intact.
+- **`FormattingTest`** — ISO-8601 parsing, checked against `java.time.Instant` as
+  an independent oracle, plus the signed one-decimal weight formatting.
 
 **Manual API check (Postman or curl)**
 
@@ -547,14 +632,14 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 
 ## Professor demonstration procedure
 
-The full sequence below is the target for Phase 7. **Currently steps 1–4 are runnable, in the app itself.**
+The full sequence below is the target for Phase 7. **Currently steps 1–6 are runnable, in the app itself.**
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
 2. Register a new user in the app → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅
 3. You are signed in automatically: rename yourself in Profile and switch **Appearance** between System / Light / Dark. ✅
 4. Show the errors the app surfaces (wrong password, duplicate username, weak password), sign out, then sign back in — close and reopen the app to prove the session is remembered. ✅
-5. Log a body weight → show the matching `weight_entries` document.
-6. Show BMI calculated from height + latest weight.
+5. Log a body weight from the **Weight** screen (Home → *Log weight*) → show the matching `weight_entries` document in Atlas. ✅
+6. Switch the units in the API to pounds (`PATCH /api/users/me {"weightUnit":"lb"}`) and reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Set a height and show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer. ✅
 7. Create a workout with several exercises and sets → show the `workouts` document.
 8. Log a second session and demonstrate the progressive-overload comparison.
 9. Register a second test account, send and accept a friend request → show the `friendships` document.
@@ -580,7 +665,7 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 |---|---|---|
 | 1 | Repo, Android project, Express backend, MongoDB connection, env vars, health check | ✅ **complete & verified** |
 | 2 | Auth (register/login/JWT), Compose theme, navigation, profile model | ✅ **complete & verified** (backend + Android auth screens, session restore, profile, theme) |
-| 3 | Dashboard, weight tracking, BMI, chart | ⏳ |
+| 3 | Dashboard, weight tracking, BMI, chart | ✅ **complete & verified** (backend + Home tab, Weight screen, trend chart) |
 | 4 | Workout logging (exercises + sets) | ⏳ |
 | 5 | Progressive overload + unit tests | ⏳ |
 | 6 | Friends + weekly leaderboard | ⏳ |
@@ -590,8 +675,10 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 
 ## Known limitations & future improvements
 
-- **Phases 1–2 complete** — authentication and profiles work end to end. The Home, Workouts and Friends tabs are still honest placeholders until Phases 3–6.
-- The only profile field editable in the app is the **display name**; goal, unit and height can be changed through `PATCH /api/users/me` and get their UI in Phase 7.
+- **Phases 1–3 complete** — authentication, profiles, body-weight tracking, BMI and the dashboard work end to end. The Workouts and Friends tabs are still honest placeholders until Phases 4–6.
+- The only profile field editable in the app is the **display name**; goal, unit and height can be changed through `PATCH /api/users/me` and get their UI in Phase 7. This means the BMI card prompts you to *"add your height in your profile"* while there is currently no in-app field for it.
+- Weight entries are logged with the **current time** in the app (the common case). Back-dating a weigh-in is supported by the API (`measuredAt`) and documented above, but has no date picker in the UI yet.
+- The weight history list is capped at the server's default page (100 entries); older entries are still counted in "All time" totals and can be paged through the API, but the app does not paginate yet.
 - Session tokens are **stateless JWTs with no server-side revocation list**, so logout clears the token locally. Acceptable for a single-device demo; production would add refresh/revocation.
 - Leaderboard scoring, streaks and progressive overload are all **recomputed on demand** (no cached snapshots). Fine for an MVP; a snapshot collection could be added if leaderboards grow large.
 - BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.

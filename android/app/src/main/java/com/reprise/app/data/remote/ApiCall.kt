@@ -48,12 +48,38 @@ suspend fun <T : Any> apiCall(block: suspend () -> Response<T>): ApiResult<T> {
         // A cancelled coroutine is NOT an error — rethrow so structured
         // concurrency keeps working.
         throw cancellation
-    } catch (io: IOException) {
-        // No network, DNS failure, connection refused, timeout...
-        ApiResult.Failure(NETWORK_ERROR_MESSAGE)
-    } catch (unexpected: Exception) {
-        ApiResult.Failure(UNEXPECTED_ERROR_MESSAGE)
+    } catch (error: Exception) {
+        networkFailure(error)
     }
+}
+
+/**
+ * Like [apiCall], but for endpoints that answer with no body (HTTP 204).
+ *
+ * Retrofit reports a 204 as a SUCCESS whose body is null, so [apiCall] — which
+ * needs a body to build its `Success` — would misread a perfectly good delete as
+ * a failure. Here success is judged purely by the status code.
+ */
+suspend fun apiCallUnit(block: suspend () -> Response<*>): ApiResult<Unit> {
+    return try {
+        val response = block()
+        if (response.isSuccessful) {
+            ApiResult.Success(Unit)
+        } else {
+            parseErrorResponse(response)
+        }
+    } catch (cancellation: CancellationException) {
+        throw cancellation
+    } catch (error: Exception) {
+        networkFailure(error)
+    }
+}
+
+/** Turn a thrown exception into the right [ApiResult.Failure]. */
+private fun networkFailure(error: Exception): ApiResult.Failure = when (error) {
+    // No network, DNS failure, connection refused, timeout...
+    is IOException -> ApiResult.Failure(NETWORK_ERROR_MESSAGE)
+    else -> ApiResult.Failure(UNEXPECTED_ERROR_MESSAGE)
 }
 
 /** Build an [ApiResult.Failure] from a non-2xx response. */

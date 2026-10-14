@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window background before Compose draws its first frame (light mode). -->
+    <color name="reprise_window_background">#FFFFFF</color>
+    <!-- Adaptive launcher icon background: RepRise yellow. -->
+    <color name="ic_launcher_background">#FFD600</color>
+</resources>

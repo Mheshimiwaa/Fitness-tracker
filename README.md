@@ -1,0 +1,505 @@
+# RepRise — Social Fitness & Progressive Overload Tracker
+
+RepRise is a beginner-friendly Android fitness-tracking application built with **Kotlin + Jetpack Compose** on the front end and **Node.js + Express + MongoDB** on the back end.
+
+It lets users track body weight, calculate BMI, log strength workouts, get **progressive overload** suggestions, and compete with friends on a weekly leaderboard — inspired by Duolingo's consistency-based social motivation.
+
+> **Project status:** Phase 1 (foundation) is complete and verified. See [Implementation phases](#implementation-phases).
+
+---
+
+## Table of contents
+
+1. [Overview](#overview)
+2. [Features](#features)
+3. [Technology stack](#technology-stack)
+4. [Architecture](#architecture)
+5. [Repository structure](#repository-structure)
+6. [Prerequisites](#prerequisites)
+7. [MongoDB Atlas setup](#mongodb-atlas-setup)
+8. [Environment variables](#environment-variables)
+9. [Backend — install & run](#backend--install--run)
+10. [Android — setup & run](#android--setup--run)
+11. [API base URL (emulator vs. physical device)](#api-base-url-emulator-vs-physical-device)
+12. [API endpoints](#api-endpoints)
+13. [Database schema & indexes](#database-schema--indexes)
+14. [Testing](#testing)
+15. [Common errors & solutions](#common-errors--solutions)
+16. [Screenshots](#screenshots)
+17. [Professor demonstration procedure](#professor-demonstration-procedure)
+18. [Implementation phases](#implementation-phases)
+19. [Known limitations & future improvements](#known-limitations--future-improvements)
+
+---
+
+## Overview
+
+RepRise rewards **consistency**, not body weight or maximum lifting strength. Its core idea is progressive overload: each workout is compared with the user's previous performance on the same exercise, and simple, transparent, rule-based guidance suggests what to try next.
+
+The Android app **never connects to MongoDB directly**. Every read and write goes through the Express REST API, which authenticates requests with JWTs and enforces ownership rules server-side.
+
+---
+
+## Features
+
+### Essential (MVP)
+| Feature | Status |
+|---|---|
+| Registration, login, logout, JWT-protected endpoints | Planned (Phase 2) |
+| Editable profile (display name, username, goal, height, unit) | Planned (Phase 2) |
+| Dashboard summary with honest empty states | Planned (Phase 3) |
+| Body-weight tracking (CRUD, kg/lb, history, chart, period change) | Planned (Phase 3) |
+| BMI from latest weight + height, with adult categories & disclaimers | Planned (Phase 3) |
+| Workout logging (workout → exercises → sets of weight × reps) | Planned (Phase 4) |
+| Progressive overload comparison + rule-based suggestions | Planned (Phase 5) |
+| Friends (search, request, accept/reject, list, remove) | Planned (Phase 6) |
+| Weekly leaderboard scored on the server | Planned (Phase 6) |
+| Activity streaks (current + longest) | Planned (Phase 7) |
+| Settings (theme, unit, height, goal, privacy, logout) | Planned (Phase 7) |
+
+### Optional improvements
+- Profile image rendering from a URL
+- Pagination beyond the first page of history
+- Friend workout-sharing toggle
+- Data export
+
+---
+
+## Technology stack
+
+**Android**
+- Kotlin, Jetpack Compose, Material 3
+- Navigation Compose, ViewModel, Coroutines & Flow
+- Retrofit + OkHttp (Kotlinx Serialization)
+- DataStore (theme/units) + EncryptedSharedPreferences (JWT)
+- Gradle Kotlin DSL + version catalog
+
+**Backend**
+- Node.js + Express 5 (JavaScript, CommonJS)
+- MongoDB Node.js driver (official) — **MongoDB Atlas** or local MongoDB
+- JWT auth, bcryptjs password hashing, Zod validation, dotenv
+- helmet, CORS, express-rate-limit
+
+**Tooling**
+- Android Studio, Gradle, Git/GitHub, Postman, MongoDB Atlas web UI
+
+---
+
+## Architecture
+
+```
+┌──────────────────────────────┐         ┌────────────────────────────────────┐
+│        Android app           │  HTTPS  │          Express REST API          │
+│                              │  JSON   │                                    │
+│  Compose UI (Material 3)     │◄───────►│  routes → middleware →             │
+│        │                     │  JWT    │  controllers → services →          │
+│        ▼                     │         │  database (MongoDB driver)         │
+│  ViewModel (immutable state) │         │                                    │
+│        ▼                     │         │  auth · validation · rate limit ·  │
+│  Repository                  │         │  CORS · request logging · errors   │
+│        ▼                     │         └─────────────────┬──────────────────┘
+│  Retrofit + OkHttp           │                           │
+└──────────────────────────────┘                           ▼
+        │                                       ┌──────────────────────┐
+        ▼                                       │      MongoDB         │
+   DataStore / token store                      │  users               │
+   (theme, units, JWT)                          │  weight_entries      │
+                                                │  workouts            │
+                                                │  friendships         │
+                                                └──────────────────────┘
+```
+
+**Why this shape?**
+- **Business rules live on the server** (BMI, training volume, streaks, leaderboard score) so results are trustworthy and can be unit-tested.
+- **The client only renders state** — Compose screens never talk to the database or contain scoring logic.
+- **One repository layer** on Android keeps networking details out of the ViewModels.
+
+### Backend request flow
+
+```
+HTTP request
+   │
+   ▼
+helmet → cors → json body parser (100 kb limit) → request logger (dev)
+   │
+   ▼
+routes  (URL → controller)
+   │
+   ▼
+middleware: verifyJwt → validate(zod) → rateLimit
+   │
+   ▼
+controllers (HTTP concerns only)
+   │
+   ▼
+services (pure logic: BMI, volume, progression, streaks, leaderboard)
+   │
+   ▼
+database (MongoDB collections + indexes)
+   │
+   ▼
+central error handler → consistent JSON error shape
+```
+
+---
+
+## Repository structure
+
+```
+reprise/
+├── README.md
+├── .gitignore
+├── android/
+│   ├── settings.gradle.kts
+│   ├── build.gradle.kts
+│   ├── gradle.properties
+│   ├── gradle/
+│   │   ├── libs.versions.toml            # single source of dependency versions
+│   │   └── wrapper/…
+│   ├── gradlew / gradlew.bat
+│   └── app/
+│       ├── build.gradle.kts
+│       └── src/main/
+│           ├── AndroidManifest.xml
+│           ├── res/                       # strings, themes, colours, icons
+│           └── java/com/reprise/app/
+│               ├── MainActivity.kt
+│               ├── navigation/            # NavHost, bottom bar, destinations
+│               ├── ui/theme/              # Color, Type, Theme
+│               ├── ui/{home,workouts,friends,profile}/…
+│               ├── components/            # reusable Compose widgets
+│               ├── viewmodels/            # (Phase 2+)
+│               ├── domain/model/          # (Phase 2+)
+│               └── data/                  # (Phase 2+) remote / local / repository
+└── backend/
+    ├── package.json
+    ├── .env.example                       # placeholders only — never real secrets
+    ├── src/
+    │   ├── server.js                      # startup: connect DB → ensure indexes → listen
+    │   ├── app.js                         # Express app + middleware + routes
+    │   ├── config/env.js                  # central env loading & validation
+    │   ├── database/                      # connection, collections, indexes
+    │   ├── middleware/                    # requestLogger, notFound, errorHandler
+    │   ├── routes/                        # health.routes.js, index.js
+    │   ├── controllers/                   # (Phase 2+)
+    │   ├── services/                      # (Phase 2+)
+    │   ├── validators/                    # (Phase 2+) Zod schemas
+    │   └── utils/                         # logger, ApiError
+    └── tests/health.test.js
+```
+
+---
+
+## Prerequisites
+
+| Tool | Version | Notes |
+|---|---|---|
+| Node.js | ≥ 20 (developed on 22) | must include the built-in test runner |
+| npm | ≥ 9 | ships with Node |
+| MongoDB | Atlas account **or** local `mongod` | the app only needs a connection string |
+| Android Studio | latest | bundles the Android SDK + a JDK |
+| JDK | 17 or 21 | bundled with Android Studio |
+| Android SDK Platform 37 (Android 17) | API 37 | the app compiles against **API 37**; Android Studio installs it automatically on first Gradle sync |
+
+**Android build toolchain** (declared in `android/gradle/libs.versions.toml`): Android Gradle Plugin **9.4.1**, Gradle **9.8.1**, Kotlin **2.2.10**, Compose BOM **2026.09.00**, `compileSdk` **37.2**, `targetSdk` **37**, `minSdk` **24** (Android 7.0).
+
+> **Note on AGP 9:** since Android Gradle Plugin 9.0, Kotlin compilation is **built in**. The project therefore does **not** apply the `org.jetbrains.kotlin.android` plugin — doing so is a hard error. Only the extra Kotlin compiler plugins (Compose, serialization) are declared.
+
+> **Note for this machine:** the JDK and Android SDK are installed *locally* (no system packages, no `sudo`) under `~/.toolchain`. Open a shell and run `source ~/.toolchain/env.sh` to use them from the command line. Android Studio should be pointed at `~/.toolchain/android-sdk` (`android/local.properties` already does this).
+
+---
+
+## MongoDB Atlas setup
+
+1. Create a free **M0** cluster at <https://cloud.mongodb.com>.
+2. **Database Access** → add a database user (username + password). *Do not reuse your Atlas login.*
+3. **Network Access** → add your IP address (or `0.0.0.0/0` for local development only).
+4. **Connect → Drivers** → copy the connection string. It looks like:
+   ```
+   mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority
+   ```
+5. Add a database name (`reprise`) to the path, so the URI ends with `/reprise`.
+6. Put the finished string in `backend/.env` as `MONGODB_URI`.
+
+**Local alternative:** if you have MongoDB installed, use `MONGODB_URI=mongodb://127.0.0.1:27017/reprise`. Everything else works identically.
+
+---
+
+## Environment variables
+
+All variables live in **`backend/.env`** (git-ignored). Start from the template:
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+| Variable | Required | Example | Purpose |
+|---|---|---|---|
+| `NODE_ENV` | no | `development` | `production` hides internal error details |
+| `PORT` | no | `4000` | HTTP port |
+| `MONGODB_URI` | **yes** | `mongodb+srv://…/reprise` | database connection string |
+| `MONGODB_DB_NAME` | no | `reprise` | logical database name |
+| `JWT_SECRET` | **yes** | *(48 random bytes)* | signs/verifies JWTs |
+| `JWT_EXPIRES_IN` | no | `7d` | token lifetime |
+| `BCRYPT_ROUNDS` | no | `10` | password-hash cost factor |
+| `CORS_ORIGIN` | no | `*` | allowed origins (`*` in dev) |
+| `ENABLE_HTTP_LOGS` | no | `true` | dev-only request logging |
+
+Generate a secret:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
+```
+
+> **Never** commit `.env`. The Android app stores **no** database credentials or signing secrets — only the API base URL.
+
+---
+
+## Backend — install & run
+
+```bash
+cd backend
+cp .env.example .env          # then edit .env and set MONGODB_URI + JWT_SECRET
+npm install
+npm run dev                   # or: npm start
+```
+
+Expected output:
+
+```
+INFO  - Connected to MongoDB (db="reprise", host="…")
+INFO  - MongoDB indexes ensured.
+INFO  - RepRise API listening on http://localhost:4000
+INFO  - Health check:  http://localhost:4000/api/health
+```
+
+Verify:
+
+```bash
+curl http://localhost:4000/api/health
+```
+
+```json
+{
+  "status": "ok",
+  "service": "reprise-backend",
+  "version": "0.1.0",
+  "environment": "development",
+  "database": { "connected": true, "name": "reprise" }
+}
+```
+
+If the database is unreachable the endpoint returns **503** with `"status": "degraded"` — the server refuses to pretend everything is fine.
+
+---
+
+## Android — setup & run
+
+**In Android Studio**
+1. *File → Open* → select the `reprise/android` folder (not the repo root).
+2. Let Gradle sync. Android Studio will use `android/local.properties` for the SDK location and offer to install **Android SDK Platform 37** if it is missing (accept it).
+3. Select an emulator (or a connected device) and press **Run ▶**.
+
+**From the command line**
+
+```bash
+source ~/.toolchain/env.sh      # adds the local JDK + Android SDK to PATH
+cd android
+./gradlew :app:assembleDebug    # builds app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:installDebug     # installs onto a running emulator/device
+```
+
+---
+
+## API base URL (emulator vs. physical device)
+
+The base URL is defined **once** in `android/app/build.gradle.kts` as a `buildConfigField`:
+
+| Target | Value | Why |
+|---|---|---|
+| Android **emulator** | `http://10.0.2.2:4000/` | `10.0.2.2` is the emulator's alias for your computer's `localhost` |
+| **Physical phone** (same Wi-Fi) | `http://<your-computer-LAN-IP>:4000/` | e.g. `http://192.168.1.20:4000/` |
+
+For a physical device you must also:
+1. Change `API_BASE_URL` in `app/build.gradle.kts` to your LAN IP.
+2. Start the backend so it listens on all interfaces (Express does by default).
+3. Make sure your phone and computer are on the same network and the firewall allows port `4000`.
+
+Cleartext HTTP is only permitted for `10.0.2.2`, `localhost` and `127.0.0.1` (see `res/xml/network_security_config.xml`). Add your LAN IP there too when testing on a real device.
+
+---
+
+## API endpoints
+
+All routes are prefixed with `/api`. Protected routes require `Authorization: Bearer <token>`.
+
+### Implemented (Phase 1)
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/health` | no | Service + database health (`200` ok, `503` degraded) |
+
+### Planned
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| POST | `/api/auth/register` | no | create an account |
+| POST | `/api/auth/login` | no | obtain a JWT |
+| GET | `/api/auth/me` | yes | current user |
+| GET/PATCH | `/api/users/me` | yes | read / update profile |
+| GET | `/api/users/search?username=` | yes | find users by username |
+| POST/GET | `/api/weights` | yes | create / list weight entries |
+| GET/PATCH/DELETE | `/api/weights/:id` | yes | read / update / delete one entry |
+| POST/GET | `/api/workouts` | yes | create / list workouts |
+| GET/PATCH/DELETE | `/api/workouts/:id` | yes | read / update / delete a workout |
+| GET | `/api/workouts/:id/progression` | yes | progression vs. the previous session |
+| POST | `/api/friends/requests` | yes | send a friend request |
+| GET/PATCH | `/api/friends/requests[/:id]` | yes | list / accept / reject requests |
+| GET/DELETE | `/api/friends[/:id]` | yes | list / remove friends |
+| GET | `/api/leaderboard/weekly` | yes | weekly friends leaderboard |
+| GET | `/api/dashboard` | yes | dashboard summary |
+
+**Error shape** (every failure):
+
+```json
+{ "error": { "message": "Human-readable explanation", "details": [] } }
+```
+
+---
+
+## Database schema & indexes
+
+Database name: **`reprise`**. Collections and their purpose:
+
+### `users`
+Account, profile and preferences. **One document per user.**
+`_id`, `displayName`, `username`, `usernameNormalized`, `email`, `emailNormalized`, `passwordHash`, `profileImageUrl?`, `fitnessGoal`, `weightUnit`, `heightCm?`, `createdAt`, `updatedAt`.
+*Never contains arrays of weight entries or workouts* — those live in their own collections so documents stay small.
+
+### `weight_entries`
+Body-weight history. `_id`, `userId`, `weight`, `unit`, `measuredAt`, `note?`, `createdAt`, `updatedAt`.
+
+### `workouts`
+Workout sessions with embedded exercises and sets.
+`_id`, `userId`, `name`, `workoutDate`, `durationMinutes?`, `notes?`, `exercises[]{ name, unit, restSeconds?, notes?, sets[]{ reps, weight } }`, `createdAt`, `updatedAt`.
+
+### `friendships`
+One row per relationship. `_id`, `requesterId`, `recipientId`, `status` (`pending`|`accepted`|`rejected`), `createdAt`, `updatedAt`.
+
+### Indexes
+| Collection | Index | Purpose |
+|---|---|---|
+| `users` | `usernameNormalized` **unique** | usernames are unique, case-insensitively |
+| `users` | `emailNormalized` **unique** | emails are unique, case-insensitively |
+| `weight_entries` | `{ userId: 1, measuredAt: -1 }` | "my weight history, newest first" |
+| `workouts` | `{ userId: 1, workoutDate: -1 }` | "my workout history, newest first" |
+| `friendships` | `{ requesterId: 1, status: 1 }` | requests I sent / my friendships |
+| `friendships` | `{ recipientId: 1, status: 1 }` | requests I received |
+
+Indexes are created automatically at startup by `src/database/indexes.js` and are visible in Atlas under **Collections → Indexes**.
+
+**Leaderboard scores and streaks are not stored** — they are recomputed from `workouts` on every request so the numbers can never drift out of sync.
+
+---
+
+## Testing
+
+**Backend**
+
+```bash
+cd backend
+npm test
+```
+
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies.
+
+Phase 1 covers: unknown-route `404` handling, and the health check in both the *degraded* and *ok* states. The "ok" test connects to MongoDB and **skips** if the database is not reachable.
+
+**Android**
+
+```bash
+cd android
+./gradlew :app:testDebugUnitTest     # JVM unit tests
+./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device)
+```
+
+**Manual API check (Postman or curl)**
+
+```bash
+curl -i http://localhost:4000/api/health
+curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
+```
+
+---
+
+## Common errors & solutions
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `Missing required environment variable "MONGODB_URI"` | no `backend/.env` | `cp backend/.env.example backend/.env` and fill it in |
+| `Failed to connect to MongoDB` on startup | wrong URI / IP not allow-listed | check the URI, and add your IP in Atlas → Network Access |
+| Health returns `503 degraded` | server is up but the DB ping failed | check the URI and that the cluster is running |
+| `MongooseServerSelectionError`-style timeout | your network blocks port 27017 | allow it, or use a different network |
+| Android: `SDK location not found` | `local.properties` missing | create it with `sdk.dir=/path/to/Android/sdk`, or open in Android Studio |
+| Android: `Cleartext HTTP traffic not permitted` | plain-HTTP URL not allow-listed | add your host to `res/xml/network_security_config.xml` |
+| Android: cannot reach the backend | wrong base URL | emulator → `10.0.2.2`; device → your LAN IP |
+| `gradlew: Permission denied` | lost the executable bit | `chmod +x android/gradlew` |
+| Android: `Failed to find Platform SDK ... android-37` | SDK Platform 37 not installed | Android Studio → SDK Manager → install **Android SDK Platform 37 (Android 17)**, or `sdkmanager "platforms;android-37.2"` |
+| Android: *"requires ... compile against version 37 or later"* | `compileSdk` too low for the current AndroidX libraries | keep the `compileSdk { version = release(37) { minorApiLevel = 2 } }` block as-is |
+| Android: `Failed to apply plugin 'org.jetbrains.kotlin.android'` | AGP 9 has built-in Kotlin | do **not** apply that plugin; see the note in [Prerequisites](#prerequisites) |
+
+---
+
+## Screenshots
+
+> _Add screenshots of the finished app here before the demonstration. Suggested shots: dark-mode Home, weight history chart, an active workout, the progressive-overload comparison, and the weekly leaderboard._
+
+---
+
+## Professor demonstration procedure
+
+The full sequence below is the target for Phase 7. **Currently only steps 1–2 are runnable** (later steps land in Phases 2–6).
+
+1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
+2. Open the Android app and show light/dark theme switching. ✅ *(theme; switch lands in Phase 7)*
+3. Register a new user → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password).
+4. Log a body weight → show the matching `weight_entries` document.
+5. Show BMI calculated from height + latest weight.
+6. Create a workout with several exercises and sets → show the `workouts` document.
+7. Log a second session and demonstrate the progressive-overload comparison.
+8. Register a second test account, send and accept a friend request → show the `friendships` document.
+9. Complete qualifying workouts and show how the weekly leaderboard score is computed.
+10. Explain the architecture, REST API, schema, authentication and scoring rules.
+
+**Test accounts** *(created in Phase 2)*:
+
+| Display name | Username | Email | Purpose |
+|---|---|---|---|
+| Alex Lifter | `alex_lifter` | `alex@example.com` | primary demo account |
+| Sam Spotter | `sam_spotter` | `sam@example.com` | friend / leaderboard rival |
+
+All demo data is created through the app so Atlas shows genuine, reproducible records.
+
+---
+
+## Implementation phases
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Repo, Android project, Express backend, MongoDB connection, env vars, health check | ✅ **complete & verified** |
+| 2 | Auth (register/login/JWT), Compose theme, navigation, profile model | ⏳ next |
+| 3 | Dashboard, weight tracking, BMI, chart | ⏳ |
+| 4 | Workout logging (exercises + sets) | ⏳ |
+| 5 | Progressive overload + unit tests | ⏳ |
+| 6 | Friends + weekly leaderboard | ⏳ |
+| 7 | Streaks, settings, polish, demo prep | ⏳ |
+
+---
+
+## Known limitations & future improvements
+
+- **Phase 1 only** — most screens are honest placeholders.
+- Leaderboard scoring, streaks and progressive overload are all **recomputed on demand** (no cached snapshots). Fine for an MVP; a snapshot collection could be added if leaderboards grow large.
+- BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.
+- Progressive-overload suggestions are **advisory, rule-based** guidance — not medical advice — and never change a workout automatically.
+- Optional future work: push notifications for streaks, profile images, friend workout sharing, data export.

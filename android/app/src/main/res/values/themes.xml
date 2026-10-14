@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        Compose owns all real theming. This XML theme only controls the window
+        background shown for the split second before Compose renders, which
+        avoids a white flash in dark mode.
+    -->
+    <style name="Theme.RepRise" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/reprise_window_background</item>
+    </style>
+</resources>

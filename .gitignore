@@ -1,0 +1,38 @@
+# ---------------------------------------------------------------------------
+# RepRise — repository-wide ignores
+# ---------------------------------------------------------------------------
+
+# Secrets / local config — NEVER commit these
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+android/app/release/
+*.apk
+*.aab
+*.keystore
+!debug.keystore
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/settings.json
+
+# Test / coverage output
+coverage/
+*.log

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Network security configuration.
+
+    Android blocks plain HTTP ("cleartext") traffic by default. Because the
+    RepRise backend runs locally over HTTP during development, we explicitly
+    allow cleartext ONLY for local development hosts:
+
+        10.0.2.2  -> the host machine as seen from the Android emulator
+        localhost / 127.0.0.1 -> the device itself
+
+    Real production traffic should always use HTTPS.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

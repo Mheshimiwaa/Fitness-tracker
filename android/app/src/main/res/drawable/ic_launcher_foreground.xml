@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Launcher icon foreground: a simple dumbbell, drawn in dark grey so it reads
+    clearly on the RepRise yellow background. Vector (not PNG) means it stays
+    crisp at every density and adds no binary assets to the repo.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Centre bar -->
+    <path
+        android:fillColor="#171717"
+        android:pathData="M36,51 h36 v6 h-36 z" />
+    <!-- Left inner plate -->
+    <path
+        android:fillColor="#171717"
+        android:pathData="M30,42 h6 v24 h-6 z" />
+    <!-- Left outer plate -->
+    <path
+        android:fillColor="#171717"
+        android:pathData="M24,46 h6 v16 h-6 z" />
+    <!-- Right inner plate -->
+    <path
+        android:fillColor="#171717"
+        android:pathData="M72,42 h6 v24 h-6 z" />
+    <!-- Right outer plate -->
+    <path
+        android:fillColor="#171717"
+        android:pathData="M78,46 h6 v16 h-6 z" />
+</vector>

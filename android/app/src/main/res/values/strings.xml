@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RepRise</string>
+
+    <!-- Bottom navigation labels -->
+    <string name="nav_home">Home</string>
+    <string name="nav_workouts">Workouts</string>
+    <string name="nav_friends">Friends</string>
+    <string name="nav_profile">Profile</string>
+
+    <!-- Screen titles -->
+    <string name="title_home">Home</string>
+    <string name="title_workouts">Workouts</string>
+    <string name="title_friends">Friends</string>
+    <string name="title_profile">Profile</string>
+
+    <!-- Empty-state copy (Phase 1 placeholders; filled in as features land) -->
+    <string name="empty_home_title">Your dashboard is ready</string>
+    <string name="empty_home_message">Log a weight entry or record a workout to see your progress here.</string>
+    <string name="empty_workouts_title">No workouts yet</string>
+    <string name="empty_workouts_message">Your logged strength sessions will appear here.</string>
+    <string name="empty_friends_title">No friends yet</string>
+    <string name="empty_friends_message">Search by username to send a friend request.</string>
+    <string name="empty_profile_title">Profile</string>
+    <string name="empty_profile_message">Your stats and settings will appear here.</string>
+</resources>

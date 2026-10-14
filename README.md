@@ -4,7 +4,7 @@ RepRise is a beginner-friendly Android fitness-tracking application built with *
 
 It lets users track body weight, calculate BMI, log strength workouts, get **progressive overload** suggestions, and compete with friends on a weekly leaderboard — inspired by Duolingo's consistency-based social motivation.
 
-> **Project status:** Phases 1, 2 and 3 are complete and verified. Phase 3 adds **body-weight tracking**, **BMI** and the **dashboard** on both sides — REST endpoints, an aggregated `GET /api/dashboard`, a real Home tab, and a Weight screen with add/edit/delete, a period selector and a hand-drawn trend chart. See [Implementation phases](#implementation-phases).
+> **Project status:** Phases 1–5 are complete and verified. Phase 5 adds the **progressive-overload assistant** on both sides — a rule-based `GET /api/progression` (latest session vs. the previous one: *progressing*, *holding* or *regressing*, with a plain-language suggestion), and a **Progress** screen reached from the Workouts tab. See [Implementation phases](#implementation-phases).
 
 ---
 
@@ -51,7 +51,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | Body-weight tracking (CRUD, kg/lb, history, chart, period change) | ✅ Phase 3 |
 | BMI from latest weight + height, with adult categories & disclaimers | ✅ Phase 3 |
 | Workout logging (workout → exercises → sets of weight × reps) | ✅ Phase 4 |
-| Progressive overload comparison + rule-based suggestions | Planned (Phase 5) |
+| Progressive overload comparison + rule-based suggestions | ✅ Phase 5 |
 | Friends (search, request, accept/reject, list, remove) | Planned (Phase 6) |
 | Weekly leaderboard scored on the server | Planned (Phase 6) |
 | Activity streaks (current + longest) | Planned (Phase 7) |
@@ -132,7 +132,7 @@ middleware: authenticate → validate(zod) → rateLimit
 controllers (HTTP concerns only)
    │
    ▼
-services (pure logic: auth, profiles — and later BMI, volume, progression, streaks, leaderboard)
+services (pure logic: auth, profiles, BMI, volume, progression — and later streaks, leaderboard)
    │
    ▼
 database (MongoDB collections + indexes)
@@ -209,6 +209,27 @@ WorkoutsUiState / WorkoutEditorUiState  (StateFlow)   exercises catalogue (sugge
 - Tapping a session opens the same editor route with its id; `"new"` is the route argument that means "log a new workout".
 - Volume (`totalVolumeKg`) is always shown in **kg** — it is a cross-session comparison figure, not a body weight with a chosen unit.
 
+### Android request flow (Phase 5 — progressive overload)
+
+```
+Workouts tab ── "Progress" ──► Progress screen (pushed)
+                                  │  LaunchedEffect(Unit) { refresh() }
+                                  ▼
+                             ProgressionViewModel
+                               ├─ trackedExercises()          → the list
+                               └─ progression(exercise)       → the trend
+                                  ▼
+                             ProgressionRepository ── maps DTOs ──► Retrofit ──► OkHttp
+                                  ▼
+                             ProgressionUiState  (StateFlow)
+                               ├─ selectedExercise == null → the list
+                               └─ selectedExercise != null → the trend
+```
+
+- The screen has **two levels** — a list of logged exercises, then one exercise's trend — and both live in one state object. Selecting is a state change, not a navigation push, because an exercise name is free text with spaces and encoding it into a route would add nothing.
+- The whole judgement is done **on the server**. The app maps the verdict string to an enum and draws it; it never re-implements a rule, so a threshold change never needs an app release.
+- An exercise with fewer than two sessions has no trend; the payload says `insufficient_data` and shows a suggestion to log it again rather than inventing a comparison.
+
 ---
 
 ## Repository structure
@@ -237,20 +258,22 @@ reprise/
 │               ├── di/AppModule.kt        # hand-written service locator
 │               ├── navigation/            # RepRiseApp (auth gate), MainScaffold,
 │               │                          # AuthNavHost, destinations
-│               ├── domain/model/          # User, AuthState, ThemeMode, Weight, Workout, enums
+│               ├── domain/model/          # User, AuthState, ThemeMode, Weight, Workout, Progression, enums
 │               ├── data/
 │               │   ├── remote/            # RepRiseApi, ApiClient, AuthInterceptor,
 │               │   │                      # ApiResult + ApiCall (error parsing), dto/
 │               │   ├── local/             # TokenStore (encrypted), SettingsStore
 │               │   └── repository/        # AuthRepository (session source of truth),
 │               │                          # WeightRepository (weight + dashboard),
-│               │                          # WorkoutRepository (workout logging)
+│               │                          # WorkoutRepository (workout logging),
+│               │                          # ProgressionRepository (progressive overload)
 │               ├── util/                  # Formatting (ISO dates, kg/lb numbers, volume)
 │               ├── ui/theme/              # Color, Type, Theme, SettingsViewModel
 │               ├── ui/auth/               # LoginScreen, RegisterScreen, AuthViewModel
 │               ├── ui/home/               # HomeScreen (dashboard) + DashboardViewModel
 │               ├── ui/weights/            # WeightsScreen + WeightsViewModel
 │               ├── ui/workouts/           # WorkoutsScreen, WorkoutEditorScreen + ViewModels
+│               ├── ui/progression/        # ProgressionScreen + ProgressionViewModel
 │               ├── ui/{friends,profile}/…
 │               └── components/            # reusable Compose widgets (ScreenContainer,
 │                                          # DetailScreen, RepRiseCard, WeightChart, …)
@@ -267,17 +290,18 @@ reprise/
     │   ├── middleware/                    # requestLogger, notFound, errorHandler,
     │   │                                  # authenticate, validate, rateLimiter
     │   ├── routes/                        # index, health, auth, users, weights,
-    │   │                                  # dashboard, workouts
-    │   ├── controllers/                   # auth, users, weights, workouts, dashboard
-    │   ├── services/                      # auth, user, weight, workout, bmi, dashboard
-    │   ├── validators/                    # common.fields, auth, user, weight, workout (Zod)
-    │   └── utils/                         # logger, ApiError, password, token, units
+    │   │                                  # dashboard, workouts, progression
+    │   ├── controllers/                   # auth, users, weights, workouts, dashboard, progression
+    │   ├── services/                      # auth, user, weight, workout, bmi, dashboard, progression
+    │   ├── validators/                    # common.fields, auth, user, weight, workout, progression (Zod)
+    │   └── utils/                         # logger, ApiError, password, token, units, objectId
     └── tests/
         ├── helpers/                       # setup, app, db (shared test utilities)
         ├── health.test.js
         ├── auth.test.js
         ├── weights.test.js
-        └── workouts.test.js
+        ├── workouts.test.js
+        └── progression.test.js
 ```
 
 ---
@@ -581,17 +605,56 @@ Rules enforced by the server:
 - Ownership is enforced inside the query (`{ _id, userId }`), so another user's workout is a `404` — the same response as a non-existent id.
 - `GET /api/dashboard` gained a `workouts` section: `{ totalCount, recentCount, recentDays, recentVolumeKg, lastWorkoutAt }` where "recent" is a **rolling** 7-day window (not a calendar week).
 
-### Planned (Phases 5–7)
+### Implemented (Phase 5 — progressive overload assistant)
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/progression/exercises` | yes | the exercises I have logged, with counts and last date |
+| GET | `/api/progression?exercise=&limit=` | yes | one exercise's recent sessions + a rule-based verdict |
+
+**Progression flow**
+
+```
+GET /api/progression/exercises
+      -> 200 { exercises: [ { name, timesLogged, lastPerformedAt } ] }
+GET /api/progression?exercise=Bench%20Press&limit=10
+      -> 200 { exercise, unit, sessionCount, sessions[], comparison }
+```
+
+The `comparison` is the interesting part:
+
+```json
+{
+  "hasPrevious": true,
+  "latest":   { "workoutDate": "…", "topWeight": 65, "totalReps": 24, "totalVolumeKg": 1560, "sets": [ … ] },
+  "previous": { "workoutDate": "…", "topWeight": 60, "totalReps": 24, "totalVolumeKg": 1440, "sets": [ … ] },
+  "topWeightDelta": 5,
+  "totalRepsDelta": 0,
+  "totalVolumeDeltaKg": 120,
+  "verdict": "progressing",
+  "suggestion": "Progress: your top set went from 60 to 65 kg. Next session, aim for 67.5 kg for the same reps — or add one rep per set first."
+}
+```
+
+Rules the assistant applies (all in `src/services/progression.service.js`, **no machine learning**):
+
+- A session is one **occurrence** of an exercise inside one workout. Sessions are compared newest-against-previous, so an exercise needs **two** sessions before it has a trend.
+- The verdict is one of `progressing`, `holding`, `regressing`, or `insufficient_data`. It is decided in **kilograms**, so flipping the display unit never changes the verdict.
+- It counts as **progressing** if the total tonnage rises by more than a small (2%) tolerance, **or** the heaviest set gets heavier, **or** more reps are done without losing volume. It is **regressing** when tonnage drops beyond the tolerance (or the top set gets lighter with no extra reps); everything else is **holding**.
+- The `suggestion` is assembled from the numbers, in the user's unit, from a fixed set of sentences — it is derived, never generated by a model.
+- Deltas are returned in the user's display unit (except `totalVolumeDeltaKg`, which — like all volume — is kilograms).
+- An exercise that has **never** been logged is a `200` with an empty `sessions` array and an `insufficient_data` verdict, not a `404`: the app can always render the same shape.
+- Exercise names are matched **exactly** (the same string the app shows as a suggestion chip). The collated index below keeps that lookup cheap; the trade-off is documented under *Known limitations*.
+
+### Planned (Phases 6–7)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/api/workouts/:id/progression` | yes | progression vs. the previous session (rule-based) |
 | POST | `/api/friends/requests` | yes | send a friend request |
 | GET/PATCH | `/api/friends/requests[/:id]` | yes | list / accept / reject requests |
 | GET/DELETE | `/api/friends[/:id]` | yes | list / remove friends |
 | GET | `/api/leaderboard/weekly` | yes | weekly friends leaderboard |
 
-> `GET /api/dashboard` simply gains new sections (progression, streak, leaderboard) as Phases 5–7 land — the app never has to be rewired.
+> `GET /api/dashboard` simply gains new sections (streak, leaderboard) as Phases 6–7 land — the app never has to be rewired.
 
 **Error shape** (every failure):
 
@@ -629,7 +692,7 @@ One row per relationship. `_id`, `requesterId`, `recipientId`, `status` (`pendin
 | `users` | `emailNormalized` **unique** | emails are unique, case-insensitively |
 | `weight_entries` | `{ userId: 1, measuredAt: -1 }` | "my weight history, newest first" |
 | `workouts` | `{ userId: 1, workoutDate: -1 }` | "my workout history, newest first" |
-| `workouts` | `{ userId: 1, 'exercises.name': 1, workoutDate: -1 }` (`user_exercise_recent`) | one exercise's history for the progressive-overload comparison (Phase 5) |
+| `workouts` | `{ userId: 1, 'exercises.name': 1, workoutDate: -1 }` (`user_exercise_recent`) | one exercise's history for the progressive-overload comparison (Phase 5) — used by both progression endpoints |
 | `friendships` | `{ requesterId: 1, status: 1 }` | requests I sent / my friendships |
 | `friendships` | `{ recipientId: 1, status: 1 }` | requests I received |
 
@@ -648,12 +711,13 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **63 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **83 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
 - **Phase 3** — weight schemas (per-unit range, future/back-dated timestamps, empty update bodies), `401` on every weight route, create/list/latest/read/update/delete, unit conversion after a preference change, ownership isolation (another user gets `404` and the owner's entry is untouched), BMI from height + latest weight, `bmiUnavailableReason`, and the 30-day change.
 - **Phase 4** — workout schemas (nested exercises/sets, plausible loads, future dates, clearing a duration/note with an explicit `null`, empty update bodies), `401` on every workout route, create with a derived `summary`, the per-unit load check naming the exact set, the distinct-exercise catalogue, list/read/update (including replacing the exercise list)/delete, ownership isolation, and the dashboard's rolling training totals.
+- **Phase 5** — the rule-based verdict in isolation (a heavier top set, more volume, more reps at equal volume, a wobble *inside* the tolerance reading as `holding`, a real drop reading as `regressing`, and one-or-zero sessions reporting `insufficient_data`), the suggestion text for kg and lb accounts, the query schema, `401` on both progression routes, and — end to end — an empty-but-valid trend for an unknown exercise, `progressing` from two real sessions, `regressing` from a lighter session, the exercise list's counts, and that one user cannot read another's progression.
 
 > **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries and workouts), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
@@ -665,7 +729,7 @@ cd android
 ./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
 
-The JVM suite (**58 tests**) covers the parts where a mistake is invisible until
+The JVM suite (**71 tests**) covers the parts where a mistake is invisible until
 runtime:
 
 - **`ApiCallTest`** — every shape the API can answer with: a successful response,
@@ -676,9 +740,10 @@ runtime:
   built in code.
 - **`ApiCallTest` (204)** — `apiCallUnit` treats a bodyless `204` as success while
   still surfacing the server's message on a `404`.
-- **`DomainMappingTest`** — pins the `fitnessGoal` / `weightUnit` / BMI-category
-  strings to the backend's contract, and checks the unknown-value fallbacks and
-  the theme-mode resolution.
+- **`DomainMappingTest`** — pins the `fitnessGoal` / `weightUnit` / BMI-category /
+  progression-verdict strings to the backend's contract, and checks the
+  unknown-value fallbacks (including the verdict's deliberate fallback to
+  `insufficient_data`) and the theme-mode resolution.
 - **`WeightRepositoryTest`** — drives a hand-written fake `RepRiseApi` to prove the
   DTO ⇄ domain mapping: values, unit codes, the canonical `weightKg`, the BMI
   category, a `null` change, the dashboard's training section, the delete path,
@@ -688,13 +753,19 @@ runtime:
   summary, the `days`/`limit` query, the exercise catalogue, the request bodies the
   editor produces, and — as its own test — that a `null` duration/note really is
   **encoded** (not dropped) so a field can be cleared.
+- **`ProgressionRepositoryTest`** — the progression payload maps faithfully:
+  sessions newest-first, the deltas, every verdict string to its enum, the
+  unknown-verdict fallback, the display unit and canonical `weightKg` for a pound
+  account, an empty-but-valid trend, the `exercise`/`limit` query, the tracked-exercise
+  list, and a rejection passing through with the server's message.
 - **`WorkoutDraftParseTest`** — the editor's validation rules, which live in a pure
   function (`parseWorkoutDraft`) precisely so they can be tested without a device:
   blank names, reps/weights, "0 kg is fine but −5 is not", a comma decimal
   separator, a blank vs. nonsense duration, and the no-exercises case.
 - **`FormattingTest`** — ISO-8601 parsing, checked against `java.time.Instant` as
-  an independent oracle, plus signed weight formatting, the editable-number
-  helper (no floating-point noise leaking into a form), and volume grouping.
+  an independent oracle, plus signed weight/int/volume formatting, the
+  editable-number helper (no floating-point noise leaking into a form), and
+  volume grouping.
 
 **Manual API check (Postman or curl)**
 
@@ -731,7 +802,7 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 
 ## Professor demonstration procedure
 
-The full sequence below is the target for Phase 7. **Currently steps 1–7 are runnable, in the app itself.**
+The full sequence below is the target for Phase 7. **Currently steps 1–8 are runnable, in the app itself.**
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
 2. Register a new user in the app → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅
@@ -740,7 +811,7 @@ The full sequence below is the target for Phase 7. **Currently steps 1–7 are r
 5. Log a body weight from the **Weight** screen (Home → *Log weight*) → show the matching `weight_entries` document in Atlas. ✅
 6. Switch the units in the API to pounds (`PATCH /api/users/me {"weightUnit":"lb"}`) and reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Set a height and show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer. ✅
 7. Create a workout from the **Workouts** tab (*Log workout*): name it, add an exercise with several sets, and save → show the nested `workouts` document in Atlas, and the derived `summary` on the card. Edit it, then delete it. ✅
-8. Log a second session for the same exercise and demonstrate the progressive-overload comparison.
+8. Log a **second** session with the same exercise, then open **Progress** (Workouts → *Progress*), tap the exercise and show the **progressive-overload comparison**: the latest-vs-previous numbers, the verdict, and the rule-based suggestion. Log a lighter session and show the verdict flip to *Regressing*. ✅
 9. Register a second test account, send and accept a friend request → show the `friendships` document.
 10. Complete qualifying workouts and show how the weekly leaderboard score is computed.
 11. Explain the architecture, REST API, schema, authentication and scoring rules.
@@ -766,7 +837,7 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 | 2 | Auth (register/login/JWT), Compose theme, navigation, profile model | ✅ **complete & verified** (backend + Android auth screens, session restore, profile, theme) |
 | 3 | Dashboard, weight tracking, BMI, chart | ✅ **complete & verified** (backend + Home tab, Weight screen, trend chart) |
 | 4 | Workout logging (exercises + sets) | ✅ **complete & verified** (backend + Workouts tab, workout editor, Home training card) |
-| 5 | Progressive overload + unit tests | ⏳ |
+| 5 | Progressive overload + unit tests | ✅ **complete & verified** (backend + Progress screen with rule-based verdicts) |
 | 6 | Friends + weekly leaderboard | ⏳ |
 | 7 | Streaks, settings, polish, demo prep | ⏳ |
 
@@ -774,7 +845,7 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 
 ## Known limitations & future improvements
 
-- **Phases 1–4 complete** — authentication, profiles, body-weight tracking, BMI, the dashboard, and workout logging work end to end. The Friends tab is still an honest placeholder until Phase 6.
+- **Phases 1–5 complete** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, and the progressive-overload assistant work end to end. The Friends tab is still an honest placeholder until Phase 6.
 - The only profile field editable in the app is the **display name**; goal, unit and height can be changed through `PATCH /api/users/me` and get their UI in Phase 7. This means the BMI card prompts you to *"add your height in your profile"* while there is currently no in-app field for it.
 - Weight entries and workouts are logged with the **current time** in the app (the common case). Back-dating is supported by the API (`measuredAt` / `workoutDate`) and documented above, but has no date picker in the UI yet.
 - A workout's **training volume is always shown in kilograms**. It is a figure for comparing sessions across units, not a body weight the user chose a unit for, so it is deliberately not converted. Per-set weights *are* converted to the preferred unit.
@@ -782,6 +853,8 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 - The weight history list is capped at the server's default page (100 entries); older entries are still counted in "All time" totals and can be paged through the API, but the app does not paginate yet. The Workouts list shows the 50 most recent sessions.
 - Session tokens are **stateless JWTs with no server-side revocation list**, so logout clears the token locally. Acceptable for a single-device demo; production would add refresh/revocation.
 - Leaderboard scoring, streaks and progressive overload are all **recomputed on demand** (no cached snapshots). Fine for an MVP; a snapshot collection could be added if leaderboards grow large.
+- Progressive overload matches exercise names **exactly** (case- and spelling-sensitive), because the indexed lookup is a plain equality match — which keeps it fast and predictable. The editor's "previously logged" chips steer you onto the same spelling, so names converge in practice; a future version could store a normalised name alongside the display name.
+- Progression compares only the **two most recent** sessions of an exercise. That answers "am I moving forward right now?" cleanly; longer-term trend lines would need a chart over `GET /api/progression`'s full session list (which the endpoint already returns).
 - BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.
 - Progressive-overload suggestions are **advisory, rule-based** guidance — not medical advice — and never change a workout automatically.
 - Optional future work: push notifications for streaks, profile images, friend workout sharing, data export.

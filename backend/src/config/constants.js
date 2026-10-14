@@ -110,6 +110,27 @@ const SET_WEIGHT_LB_MAX = 2205;
 /** How far back the dashboard's "recent training" numbers look. */
 const WORKOUT_RECENT_DAYS = 7;
 
+/**
+ * Progressive-overload assistant.
+ *
+ * The comparison is deliberately RULE-BASED and explainable — there is no model
+ * here, just the judgements a lifter would make themselves:
+ *
+ *   - did the heaviest set get heavier?
+ *   - was more total work (weight x reps) done?
+ *   - were more reps done without losing volume?
+ *
+ * `PROGRESSION_VOLUME_TOLERANCE` absorbs ordinary day-to-day noise (a slightly
+ * sloppy rep, a different bar) so the app does not shout "regression" over a 1%
+ * wobble. The two increments are the smallest sensible jump: 2.5 kg is one pair
+ * of small plates, 5 lb the imperial equivalent.
+ */
+const PROGRESSION_VOLUME_TOLERANCE = 0.02;
+const PROGRESSION_INCREMENT_KG = 2.5;
+const PROGRESSION_INCREMENT_LB = 5;
+const PROGRESSION_DEFAULT_LIMIT = 10;
+const PROGRESSION_MAX_LIMIT = 50;
+
 module.exports = {
   FITNESS_GOALS,
   WEIGHT_UNITS,
@@ -143,4 +164,9 @@ module.exports = {
   SET_WEIGHT_KG_MAX,
   SET_WEIGHT_LB_MAX,
   WORKOUT_RECENT_DAYS,
+  PROGRESSION_VOLUME_TOLERANCE,
+  PROGRESSION_INCREMENT_KG,
+  PROGRESSION_INCREMENT_LB,
+  PROGRESSION_DEFAULT_LIMIT,
+  PROGRESSION_MAX_LIMIT,
 };

@@ -19,10 +19,10 @@
  *    404 — so the API cannot be used to probe which ids exist.
  */
 
-const { ObjectId } = require('mongodb');
 const { getDb } = require('../database/connection');
 const { COLLECTIONS } = require('../database/collections');
 const ApiError = require('../utils/ApiError');
+const { toObjectId } = require('../utils/objectId');
 const { toKilograms, fromKilograms, round } = require('../utils/units');
 const {
   SET_WEIGHT_KG_MAX,
@@ -37,16 +37,6 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** The workouts collection. Called lazily so the DB is connected first. */
 function workouts() {
   return getDb().collection(COLLECTIONS.WORKOUTS);
-}
-
-/** Cast to ObjectId, returning null instead of throwing on malformed input. */
-function toObjectId(value) {
-  if (!value) return null;
-  try {
-    return typeof value === 'string' ? new ObjectId(value) : value;
-  } catch {
-    return null;
-  }
 }
 
 /**

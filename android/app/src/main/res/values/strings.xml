@@ -147,6 +147,7 @@
     <string name="workouts_volume">%1$s kg lifted</string>
     <string name="workouts_delete_title">Delete this workout?</string>
     <string name="workouts_delete_message">This session will be removed permanently.</string>
+    <string name="workouts_progress_button">Progress</string>
 
     <!-- Workout editor -->
     <string name="workout_editor_new_title">Log workout</string>
@@ -185,6 +186,27 @@
     <string name="home_action_log_workout">Log workout</string>
     <string name="home_action_view_workouts">View workouts</string>
 
+    <!-- Progressive overload assistant (Phase 5) -->
+    <string name="title_progress">Progress</string>
+    <string name="progression_list_hint">Tap an exercise to see how your last session compares with the one before it.</string>
+    <string name="progression_empty_title">Nothing to compare yet</string>
+    <string name="progression_empty_message">Log the same exercise in two different workouts and RepRise will start tracking it here.</string>
+    <string name="progression_last_performed">Last: %1$s</string>
+    <string name="progression_verdict_progressing">Progressing</string>
+    <string name="progression_verdict_holding">Holding steady</string>
+    <string name="progression_verdict_regressing">Regressing</string>
+    <string name="progression_verdict_insufficient">Not enough data</string>
+    <string name="progression_comp_title">Latest vs previous</string>
+    <string name="progression_latest_label">Latest</string>
+    <string name="progression_previous_label">Previous</string>
+    <string name="progression_no_previous">Log this exercise again to see a comparison.</string>
+    <string name="progression_stat_top_weight">Top set</string>
+    <string name="progression_stat_reps">Total reps</string>
+    <string name="progression_stat_volume">Volume (kg)</string>
+    <string name="progression_history_title">Recent sessions</string>
+    <!-- A number followed by a unit, e.g. "65 kg" or "+2.5 kg". -->
+    <string name="value_with_unit">%1$s %2$s</string>
+
     <!-- Counted nouns. Using plurals means "1 set" never reads "1 sets". -->
     <plurals name="workouts_count">
         <item quantity="one">%1$d session</item>
@@ -197,5 +219,13 @@
     <plurals name="workout_sets">
         <item quantity="one">%1$d set</item>
         <item quantity="other">%1$d sets</item>
+    </plurals>
+    <plurals name="progression_times_logged">
+        <item quantity="one">logged once</item>
+        <item quantity="other">logged %1$d times</item>
+    </plurals>
+    <plurals name="progression_reps">
+        <item quantity="one">%1$d rep</item>
+        <item quantity="other">%1$d reps</item>
     </plurals>
 </resources>

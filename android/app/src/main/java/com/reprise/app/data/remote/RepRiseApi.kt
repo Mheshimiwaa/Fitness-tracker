@@ -7,9 +7,11 @@ import com.reprise.app.data.remote.dto.DashboardDto
 import com.reprise.app.data.remote.dto.ExerciseCatalogueDto
 import com.reprise.app.data.remote.dto.LatestWeightEnvelopeDto
 import com.reprise.app.data.remote.dto.LoginRequest
+import com.reprise.app.data.remote.dto.ProgressionDto
 import com.reprise.app.data.remote.dto.RegisterRequest
 import com.reprise.app.data.remote.dto.UpdateProfileRequest
 import com.reprise.app.data.remote.dto.UpdateWeightRequest
+import com.reprise.app.data.remote.dto.TrackedExerciseListDto
 import com.reprise.app.data.remote.dto.UpdateWorkoutRequest
 import com.reprise.app.data.remote.dto.UserEnvelopeDto
 import com.reprise.app.data.remote.dto.WeightEntryEnvelopeDto
@@ -129,4 +131,25 @@ interface RepRiseApi {
     /** Deletes a workout. The server answers 204 No Content. */
     @DELETE("api/workouts/{id}")
     suspend fun deleteWorkout(@Path("id") id: String): Response<Unit>
+
+    // --- Progressive overload assistant (Phase 5) ---------------------------
+
+    /**
+     * The trend for one exercise: its recent sessions plus a rule-based verdict
+     * comparing the latest session with the previous one.
+     *
+     * An exercise that has never been logged is still a 200 — just an empty
+     * session list and an `insufficient_data` verdict.
+     *
+     * @param limit how many recent sessions to include (server default 10)
+     */
+    @GET("api/progression")
+    suspend fun progression(
+        @Query("exercise") exercise: String,
+        @Query("limit") limit: Int? = null,
+    ): Response<ProgressionDto>
+
+    /** Every exercise the user has logged, with how often and when last. */
+    @GET("api/progression/exercises")
+    suspend fun trackedExercises(): Response<TrackedExerciseListDto>
 }

@@ -1,6 +1,7 @@
 package com.reprise.app.ui.workouts
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -58,6 +60,7 @@ import com.reprise.app.util.formatVolume
 fun WorkoutsScreen(
     onLogWorkout: () -> Unit,
     onOpenWorkout: (String) -> Unit,
+    onOpenProgress: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: WorkoutsViewModel = viewModel(factory = WorkoutsViewModel.Factory),
 ) {
@@ -70,11 +73,19 @@ fun WorkoutsScreen(
     var pendingDelete by remember { mutableStateOf<Workout?>(null) }
 
     ScreenContainer(title = stringResource(R.string.title_workouts), modifier = modifier) {
-        Button(
-            onClick = onLogWorkout,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(text = stringResource(R.string.workouts_log_button))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(
+                onClick = onLogWorkout,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(text = stringResource(R.string.workouts_log_button))
+            }
+            OutlinedButton(
+                onClick = onOpenProgress,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(text = stringResource(R.string.workouts_progress_button))
+            }
         }
 
         state.errorMessage?.let { message ->

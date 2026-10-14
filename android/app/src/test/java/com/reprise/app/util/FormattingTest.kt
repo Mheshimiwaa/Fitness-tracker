@@ -103,4 +103,18 @@ class FormattingTest {
         assertEquals("0", formatVolume(0.0, locale = Locale.US))
         assertEquals("12,345", formatVolume(12345.4, locale = Locale.US))
     }
+
+    @Test
+    fun `a signed volume keeps grouping and shows its direction`() {
+        assertEquals("+1,200", formatSignedVolume(1200.0, locale = Locale.US))
+        assertEquals("-800", formatSignedVolume(-800.0, locale = Locale.US))
+        assertEquals("0", formatSignedVolume(0.0, locale = Locale.US))
+    }
+
+    @Test
+    fun `a signed whole number shows its direction but no decimal point`() {
+        assertEquals("+3", formatSignedInt(3))
+        assertEquals("-2", formatSignedInt(-2))
+        assertEquals("0", formatSignedInt(0))
+    }
 }

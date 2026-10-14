@@ -28,6 +28,7 @@ import com.reprise.app.ui.auth.AuthFormState
 import com.reprise.app.ui.friends.FriendsScreen
 import com.reprise.app.ui.home.HomeScreen
 import com.reprise.app.ui.profile.ProfileScreen
+import com.reprise.app.ui.progression.ProgressionScreen
 import com.reprise.app.ui.weights.WeightsScreen
 import com.reprise.app.ui.workouts.WorkoutEditorScreen
 import com.reprise.app.ui.workouts.WorkoutsScreen
@@ -107,6 +108,7 @@ fun MainScaffold(
                 WorkoutsScreen(
                     onLogWorkout = { navController.navigate(workoutEditorRoute()) },
                     onOpenWorkout = { id -> navController.navigate(workoutEditorRoute(id)) },
+                    onOpenProgress = { navController.navigate(PROGRESSION_ROUTE) },
                 )
             }
             composable(TopLevelDestination.FRIENDS.route) { FriendsScreen() }
@@ -124,6 +126,9 @@ fun MainScaffold(
             // Pushed detail screens, reachable from a tab.
             composable(WEIGHT_ROUTE) {
                 WeightsScreen(onBack = { navController.popBackStack() })
+            }
+            composable(PROGRESSION_ROUTE) {
+                ProgressionScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = "$WORKOUT_EDITOR_ROUTE/{workoutId}",

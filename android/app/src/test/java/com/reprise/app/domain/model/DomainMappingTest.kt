@@ -95,4 +95,30 @@ class DomainMappingTest {
         assertTrue(ThemeMode.DARK.isDark(systemInDarkTheme = false))
         assertFalse(ThemeMode.LIGHT.isDark(systemInDarkTheme = true))
     }
+
+    @Test
+    fun `progression verdicts match the server contract`() {
+        // Produced by backend/src/services/progression.service.js. Renaming a
+        // verdict there must break this test, not silently downgrade the UI.
+        assertEquals(
+            setOf("progressing", "holding", "regressing", "insufficient_data"),
+            ProgressionVerdict.entries.map { it.apiValue }.toSet(),
+        )
+    }
+
+    @Test
+    fun `progression verdict maps every known api value`() {
+        assertEquals(ProgressionVerdict.PROGRESSING, ProgressionVerdict.fromApi("progressing"))
+        assertEquals(ProgressionVerdict.HOLDING, ProgressionVerdict.fromApi("holding"))
+        assertEquals(ProgressionVerdict.REGRESSING, ProgressionVerdict.fromApi("regressing"))
+        assertEquals(ProgressionVerdict.INSUFFICIENT_DATA, ProgressionVerdict.fromApi("insufficient_data"))
+    }
+
+    @Test
+    fun `progression verdict falls back to insufficient data when unrecognised`() {
+        // A newer server must not crash an older app: "we cannot tell yet" is the
+        // safe thing to show when the verdict is something we do not know.
+        assertEquals(ProgressionVerdict.INSUFFICIENT_DATA, ProgressionVerdict.fromApi("superhuman"))
+        assertEquals(ProgressionVerdict.INSUFFICIENT_DATA, ProgressionVerdict.fromApi(null))
+    }
 }

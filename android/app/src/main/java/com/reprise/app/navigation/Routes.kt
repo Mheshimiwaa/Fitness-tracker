@@ -28,3 +28,12 @@ const val NEW_WORKOUT_ID = "new"
  */
 fun workoutEditorRoute(workoutId: String? = null): String =
     "$WORKOUT_EDITOR_ROUTE/${workoutId ?: NEW_WORKOUT_ID}"
+
+/**
+ * The progressive-overload screen (Phase 5).
+ *
+ * It carries no arguments: the exercise list and the selected exercise are both
+ * held in the ViewModel's state, because an exercise name is free text and
+ * encoding it into a route would add nothing.
+ */
+const val PROGRESSION_ROUTE = "progression"

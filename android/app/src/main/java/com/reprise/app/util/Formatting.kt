@@ -87,10 +87,30 @@ fun formatSignedWeight(
     value: Double,
     decimals: Int = 1,
     locale: Locale = Locale.getDefault(),
-): String {
-    val formatted = formatWeight(kotlin.math.abs(value), decimals, locale)
-    val sign = if (value > 0) "+" else if (value < 0) "-" else ""
-    return sign + formatted
+): String = signedPrefix(value) + formatWeight(kotlin.math.abs(value), decimals, locale)
+
+/**
+ * Format a training-volume change with an explicit sign and thousands
+ * separators, e.g. "+1,200" or "-800".
+ *
+ * Shares [formatVolume]'s grouping so a change sits visually beside the volume
+ * figure it belongs to.
+ */
+fun formatSignedVolume(value: Double, locale: Locale = Locale.getDefault()): String =
+    signedPrefix(value) + String.format(locale, "%,.0f", kotlin.math.abs(value))
+
+/** Format an integer with an explicit sign, e.g. "+3", "-2", or plain "0". */
+fun formatSignedInt(value: Int): String = when {
+    value > 0 -> "+$value"
+    value < 0 -> "-${-value}"
+    else -> "0"
+}
+
+/** "+", "-", or nothing at zero — the one place that decides a sign. */
+private fun signedPrefix(value: Double): String = when {
+    value > 0 -> "+"
+    value < 0 -> "-"
+    else -> ""
 }
 
 /**

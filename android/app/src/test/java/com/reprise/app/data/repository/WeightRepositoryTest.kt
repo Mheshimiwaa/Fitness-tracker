@@ -12,7 +12,9 @@ import com.reprise.app.data.remote.dto.DashboardWorkoutsDto
 import com.reprise.app.data.remote.dto.ExerciseCatalogueDto
 import com.reprise.app.data.remote.dto.LatestWeightEnvelopeDto
 import com.reprise.app.data.remote.dto.LoginRequest
+import com.reprise.app.data.remote.dto.ProgressionDto
 import com.reprise.app.data.remote.dto.RegisterRequest
+import com.reprise.app.data.remote.dto.TrackedExerciseListDto
 import com.reprise.app.data.remote.dto.UpdateProfileRequest
 import com.reprise.app.data.remote.dto.UpdateWeightRequest
 import com.reprise.app.data.remote.dto.UpdateWorkoutRequest
@@ -375,4 +377,12 @@ private class FakeApi(
 
     override suspend fun deleteWorkout(id: String): Response<Unit> =
         throw NotImplementedError("deleteWorkout is not used by WeightRepository")
+
+    // --- Progression (handled by ProgressionRepositoryTest) ------------------
+
+    override suspend fun progression(exercise: String, limit: Int?): Response<ProgressionDto> =
+        throw NotImplementedError("progression is not used by WeightRepository")
+
+    override suspend fun trackedExercises(): Response<TrackedExerciseListDto> =
+        throw NotImplementedError("trackedExercises is not used by WeightRepository")
 }

@@ -558,6 +558,16 @@ For a physical device you must also:
 
 Cleartext HTTP is only permitted for `10.0.2.2`, `localhost` and `127.0.0.1` (see `res/xml/network_security_config.xml`). Add your LAN IP there too when testing on a real device.
 
+**Over USB, none of that is needed.** `adb reverse` forwards the phone's own `localhost` to your computer, and `127.0.0.1` is *already* on the cleartext allow-list — so a USB install needs no LAN IP and nothing to remember to revert:
+
+```bash
+adb reverse tcp:4000 tcp:4000     # re-run each time the phone reconnects
+```
+
+Point `API_BASE_URL` at `http://127.0.0.1:4000/` (instead of `10.0.2.2`) for that. It also works on Wi-Fi networks that isolate clients from each other.
+
+> Either way, **revert the change before committing**: the committed debug URL is the emulator's `10.0.2.2`, so a pushed build stays correct for anyone running an emulator.
+
 ---
 
 ## API endpoints

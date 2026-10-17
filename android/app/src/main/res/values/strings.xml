@@ -66,6 +66,36 @@
     <string name="profile_height_hint">Used for your BMI. Leave it empty to remove it.</string>
     <string name="profile_height_invalid">Enter a whole number between %1$d and %2$d cm.</string>
 
+    <!-- Profile: the gym reminder (a local notification, not a server setting) -->
+    <string name="profile_reminder_title">Gym reminder</string>
+    <string name="profile_reminder_on">A reminder is scheduled for the days below.</string>
+    <string name="profile_reminder_off">No reminder. Turn it on for a nudge to train.</string>
+    <string name="profile_reminder_blocked">Android is blocking RepRise notifications, so this reminder will not appear. Allow notifications for the app in Android Settings.</string>
+    <string name="profile_reminder_time">Time</string>
+    <string name="profile_reminder_time_hint">On a 24-hour clock, in this phone\'s time zone.</string>
+    <string name="profile_reminder_time_field">Reminder time</string>
+    <string name="profile_reminder_time_invalid">Enter a time as HH:mm, for example 18:30.</string>
+    <string name="profile_reminder_save_time">Save time</string>
+    <string name="profile_reminder_days">Days</string>
+    <string name="profile_reminder_days_hint">Pick the days you train. At least one day is required.</string>
+    <string name="profile_reminder_summary_daily">Reminds you every day at %1$s.</string>
+    <string name="profile_reminder_summary_days">Reminds you on %1$s at %2$s.</string>
+
+    <!-- Weekday abbreviations, used by the reminder\'s day chips -->
+    <string name="day_monday_short">Mon</string>
+    <string name="day_tuesday_short">Tue</string>
+    <string name="day_wednesday_short">Wed</string>
+    <string name="day_thursday_short">Thu</string>
+    <string name="day_friday_short">Fri</string>
+    <string name="day_saturday_short">Sat</string>
+    <string name="day_sunday_short">Sun</string>
+
+    <!-- The gym-reminder notification -->
+    <string name="notification_gym_reminder_title">Time to train</string>
+    <string name="notification_gym_reminder_text">Head to the gym and log today\'s workout in RepRise to keep your streak going.</string>
+    <string name="notification_channel_reminder_name">Gym reminder</string>
+    <string name="notification_channel_reminder_description">A reminder to train on the days you chose.</string>
+
     <!-- Fitness goals -->
     <string name="goal_lose_weight">Lose weight</string>
     <string name="goal_maintain">Maintain</string>

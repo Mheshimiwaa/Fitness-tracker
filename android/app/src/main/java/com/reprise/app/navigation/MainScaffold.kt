@@ -24,6 +24,9 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.reprise.app.R
 import com.reprise.app.domain.model.FitnessGoal
+import com.reprise.app.domain.model.GymReminder
+import com.reprise.app.domain.model.ReminderDay
+import com.reprise.app.domain.model.ReminderTime
 import com.reprise.app.domain.model.ThemeMode
 import com.reprise.app.domain.model.User
 import com.reprise.app.domain.model.WeightUnit
@@ -50,11 +53,15 @@ fun MainScaffold(
     user: User,
     formState: AuthFormState,
     themeMode: ThemeMode,
+    reminder: GymReminder,
     onSaveDisplayName: (String) -> Unit,
     onChangeFitnessGoal: (FitnessGoal) -> Unit,
     onChangeWeightUnit: (WeightUnit) -> Unit,
     onSaveHeight: (Int?) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
+    onReminderEnabledChange: (Boolean) -> Unit,
+    onReminderTimeChange: (ReminderTime) -> Unit,
+    onToggleReminderDay: (ReminderDay) -> Unit,
     onLogout: () -> Unit,
 ) {
     val navController = rememberNavController()
@@ -134,11 +141,15 @@ fun MainScaffold(
                     user = user,
                     formState = formState,
                     themeMode = themeMode,
+                    reminder = reminder,
                     onSaveDisplayName = onSaveDisplayName,
                     onChangeFitnessGoal = onChangeFitnessGoal,
                     onChangeWeightUnit = onChangeWeightUnit,
                     onSaveHeight = onSaveHeight,
                     onThemeModeChange = onThemeModeChange,
+                    onReminderEnabledChange = onReminderEnabledChange,
+                    onReminderTimeChange = onReminderTimeChange,
+                    onToggleReminderDay = onToggleReminderDay,
                     onLogout = onLogout,
                 )
             }

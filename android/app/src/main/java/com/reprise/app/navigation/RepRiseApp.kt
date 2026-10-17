@@ -29,6 +29,7 @@ fun RepRiseApp() {
     val authState by authViewModel.authState.collectAsStateWithLifecycle()
     val formState by authViewModel.formState.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
+    val reminder by settingsViewModel.gymReminder.collectAsStateWithLifecycle()
 
     when (val state = authState) {
         // Still validating the stored token — show a spinner, NOT the login form.
@@ -45,11 +46,15 @@ fun RepRiseApp() {
             user = state.user,
             formState = formState,
             themeMode = themeMode,
+            reminder = reminder,
             onSaveDisplayName = authViewModel::updateDisplayName,
             onChangeFitnessGoal = authViewModel::updateFitnessGoal,
             onChangeWeightUnit = authViewModel::updateWeightUnit,
             onSaveHeight = authViewModel::updateHeight,
             onThemeModeChange = settingsViewModel::setThemeMode,
+            onReminderEnabledChange = settingsViewModel::setReminderEnabled,
+            onReminderTimeChange = settingsViewModel::setReminderTime,
+            onToggleReminderDay = settingsViewModel::toggleReminderDay,
             onLogout = authViewModel::logout,
         )
     }

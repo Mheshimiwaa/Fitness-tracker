@@ -37,6 +37,9 @@ import com.reprise.app.R
 import com.reprise.app.components.RepRiseCard
 import com.reprise.app.components.ScreenContainer
 import com.reprise.app.domain.model.FitnessGoal
+import com.reprise.app.domain.model.GymReminder
+import com.reprise.app.domain.model.ReminderDay
+import com.reprise.app.domain.model.ReminderTime
 import com.reprise.app.domain.model.ThemeMode
 import com.reprise.app.domain.model.User
 import com.reprise.app.domain.model.WeightUnit
@@ -51,8 +54,9 @@ import com.reprise.app.ui.theme.RepRiseTheme
  *
  * Every value shown here comes from the API, and the four personal fields —
  * display name, training goal, preferred unit and height — are all genuinely
- * writable via `PATCH /api/users/me`. The theme is the one local preference: it
- * lives in DataStore because the server has no opinion about it.
+ * writable via `PATCH /api/users/me`. Two preferences are local instead: the
+ * theme, and the gym reminder, because both are about this device rather than
+ * the account. See [ReminderCard] for why.
  *
  * Each card saves on its own and therefore shows its own confirmation and its
  * own errors; see [AuthFormState.field] for how one shared state serves them all.
@@ -62,11 +66,15 @@ fun ProfileScreen(
     user: User,
     formState: AuthFormState,
     themeMode: ThemeMode,
+    reminder: GymReminder,
     onSaveDisplayName: (String) -> Unit,
     onChangeFitnessGoal: (FitnessGoal) -> Unit,
     onChangeWeightUnit: (WeightUnit) -> Unit,
     onSaveHeight: (Int?) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
+    onReminderEnabledChange: (Boolean) -> Unit,
+    onReminderTimeChange: (ReminderTime) -> Unit,
+    onToggleReminderDay: (ReminderDay) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -98,6 +106,13 @@ fun ProfileScreen(
         AppearanceCard(
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
+        )
+
+        ReminderCard(
+            reminder = reminder,
+            onEnabledChange = onReminderEnabledChange,
+            onTimeChange = onReminderTimeChange,
+            onToggleDay = onToggleReminderDay,
         )
 
         OutlinedButton(
@@ -512,11 +527,19 @@ private fun ProfileScreenPreview() {
             ),
             formState = AuthFormState(),
             themeMode = ThemeMode.SYSTEM,
+            reminder = GymReminder(
+                enabled = true,
+                time = ReminderTime(hour = 18, minute = 30),
+                days = setOf(ReminderDay.MONDAY, ReminderDay.WEDNESDAY, ReminderDay.FRIDAY),
+            ),
             onSaveDisplayName = {},
             onChangeFitnessGoal = {},
             onChangeWeightUnit = {},
             onSaveHeight = {},
             onThemeModeChange = {},
+            onReminderEnabledChange = {},
+            onReminderTimeChange = {},
+            onToggleReminderDay = {},
             onLogout = {},
         )
     }

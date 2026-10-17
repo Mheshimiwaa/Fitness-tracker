@@ -101,6 +101,9 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.security.crypto)
 
+    // --- Background work: the daily gym reminder is a WorkManager job ---
+    implementation(libs.androidx.work.runtime.ktx)
+
     // --- Debug-only tooling (Layout Inspector / @Preview) ---
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

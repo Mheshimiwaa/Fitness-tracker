@@ -4,6 +4,15 @@
     <!-- The app talks to the Express backend over HTTP, so it needs INTERNET. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!--
+      The gym reminder is a local notification. On Android 13+ posting any
+      notification requires this runtime permission; on older versions it is
+      granted at install time, so the app asks for it only when the user turns
+      the reminder on. Notifications are scheduled with WorkManager, which needs
+      no other permission and survives a reboot by itself.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".RepRiseApplication"
         android:allowBackup="true"

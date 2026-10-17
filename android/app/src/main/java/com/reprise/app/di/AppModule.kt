@@ -25,6 +25,15 @@ object AppModule {
 
     private var initialized = false
 
+    /**
+     * The application context, kept so that components which need one (the gym
+     * reminder's scheduler, via the settings ViewModel) can be built here rather
+     * than in the UI. This is an APPLICATION context, so holding it for the
+     * lifetime of the process is correct — it cannot leak an Activity.
+     */
+    lateinit var appContext: Context
+        private set
+
     lateinit var tokenStore: TokenStore
         private set
 
@@ -54,6 +63,7 @@ object AppModule {
         if (initialized) return
 
         val appContext = context.applicationContext
+        this.appContext = appContext
         tokenStore = TokenStore(appContext)
         settingsStore = SettingsStore(appContext)
 

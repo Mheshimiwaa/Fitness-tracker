@@ -636,6 +636,14 @@ If the database is unreachable the endpoint returns **503** with `"status": "deg
 
 Everything above runs the API on **your own machine**, which means it is only reachable by devices on **your** network: `http://10.0.2.2:4000/` is an emulator alias, and a LAN address like `http://192.168.8.102:4000/` means nothing to a phone on mobile data. To share the app with someone else, the API needs a **public https URL**, and that URL is compiled into the APK.
 
+> **This project is already deployed.** The API runs at <https://fitness-tracker-eight-delta.vercel.app> (Vercel's free tier) with its data in MongoDB Atlas, and the release APK is compiled against that URL — which is why the app works on any phone, on any network. Confirm it in one line:
+> ```bash
+> curl https://fitness-tracker-eight-delta.vercel.app/api/health
+> ```
+> It answers `"status":"ok"` with `"database":{"connected":true …}`.
+>
+> Do **not** expect a website at that address. Opening the bare URL in a browser returns `{"error":{"message":"Route not found: GET /"}}` — that is this API answering correctly, not a fault. There is deliberately no homepage: the user interface is the Android app, and the API only serves `/api/…` (data) and `/uploads/…` (profile pictures).
+
 The database side is always **MongoDB Atlas** (a free M0 cluster). For the API itself this repository supports two free hosts — pick whichever suits you:
 
 | | **Vercel** (recommended) | **Render** |
@@ -1378,6 +1386,8 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 ## Professor demonstration procedure
 
 The full sequence below is the target for Phase 7. **Currently steps 1–12 are runnable, in the app itself** — including the profile picture and the reminder's sound.
+
+Deployment is part of the deliverable too: the API is live on Vercel (see [Deploying the backend](#deploying-the-backend-so-it-works-off-your-network)), so step 1 can be shown against the **deployed** instance rather than a laptop — and the app can be demonstrated on a phone running on mobile data, proving it is not tied to your own network.
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
 2. Register a new user in the app → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅

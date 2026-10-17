@@ -3,8 +3,11 @@
 /**
  * Builds and configures the Express application.
  *
- * Kept separate from server.js so tests can import the app WITHOUT opening a
- * real network port (`server.js` is the file that calls app.listen()).
+ * Kept separate from start.js so tests can import the app WITHOUT opening a
+ * real network port (`start.js` is the file that calls app.listen()).
+ *
+ * This file is deliberately named `app.js`: it is the entry point Vercel finds
+ * when deploying (see the note at the top of start.js).
  */
 
 const express = require('express');
@@ -63,7 +66,7 @@ app.use(requestLogger);
 /**
  * Make sure the database is reachable before a route touches it.
  *
- * On a normal machine `server.js` has already connected and this is a single
+ * On a normal machine `src/start.js` has already connected and this is a single
  * boolean check. On a serverless host (Vercel), where no startup step runs, this
  * is what actually opens the connection — see middleware/ensureDatabase.js.
  *

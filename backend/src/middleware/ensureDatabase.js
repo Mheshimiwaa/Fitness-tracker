@@ -3,12 +3,12 @@
 /**
  * Connects to MongoDB on demand, when nothing did it at startup.
  *
- * `src/server.js` is how the API runs on a normal machine: it connects BEFORE
+ * `src/start.js` is how the API runs on a normal machine: it connects BEFORE
  * it starts listening and refuses to start if the database is unreachable.
  *
  * A serverless host (Vercel) has no equivalent startup step. It wraps the
  * Express app itself — it may import `src/app.js` directly and never run a
- * single line of `server.js` — so `connect()` would never be called and every
+ * single line of `start.js` — so `connect()` would never be called and every
  * request would fail with "MongoDB is not connected yet". The app would look
  * broken for a reason that has nothing to do with the app.
  *

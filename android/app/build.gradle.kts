@@ -62,7 +62,7 @@ android {
             //
             // If the project ends up with a different Vercel domain, change
             // this ONE line and rebuild — nothing else depends on the host.
-            buildConfigField("String", "API_BASE_URL", "\"https://reprise-api.vercel.app/\"")
+            buildConfigField("String", "API_BASE_URL", "\"https://fitness-tracker-eight-delta.vercel.app/\"")
             // Signed with the Debug keystore on purpose: this APK is handed to
             // friends to sideload, not published to the Play Store, and using
             // the same key as the debug build means it INSTALLS OVER an already

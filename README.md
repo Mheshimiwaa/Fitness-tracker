@@ -489,7 +489,7 @@ reprise/
     ├── package.json
     ├── .env.example                       # placeholders only — never real secrets
     ├── src/
-    │   ├── server.js                      # startup: connect DB → ensure indexes → listen
+    │   ├── start.js                       # startup: connect DB → ensure indexes → listen
     │   ├── app.js                         # Express app + middleware + routes
     │   ├── config/
     │   │   ├── env.js                     # central env loading & validation
@@ -665,13 +665,13 @@ Either way, push this repository to GitHub first — both hosts build from the r
    - **`JWT_SECRET`** — a long random one: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
    - **`NODE_ENV`** = `production` — Vercel usually sets this itself, but pinning it makes the behaviour explicit rather than assumed. It is not cosmetic: in production the error handler answers unexpected `500`s with a generic message instead of leaking internal details.
 4. **Deploy**, and let the first build finish without an error.
-5. Your URL is shown on the deployment page, e.g. `https://reprise-api.vercel.app`. Confirm the API *and* the database are live:
+5. Your URL is shown on the deployment page — for this project it is `https://fitness-tracker-eight-delta.vercel.app`. Confirm the API *and* the database are live:
    ```bash
-   curl https://<your-project>.vercel.app/api/health
+   curl https://fitness-tracker-eight-delta.vercel.app/api/health
    ```
-   It must return `"status":"ok"` with `"database":{"connected":true …}`. If Vercel shortened or disambiguated your project name, note the real URL — it goes into the app (next step) and into `build.gradle.kts`.
+   It must return `"status":"ok"` with `"database":{"connected":true …}`. If Vercel gave your project a different domain, note the real URL — it goes into the app (next step) and into `build.gradle.kts`.
 
-> **How it runs there.** Vercel does not necessarily execute `src/server.js`, so it may never run the usual "connect, then listen" startup. `src/middleware/ensureDatabase.js` covers exactly that case: on the first request it opens the connection (once per instance, shared by every concurrent request), so the API connects whether the host starts it the normal way or hands the Express app straight to its own request handler. `app.set('trust proxy', 1)` is what then makes `req.protocol` read as `https`, so photo URLs come out as `https://…` instead of `http://…`.
+> **How it runs there.** Vercel finds the Express app by looking for a file named `app`, `index` or `server` — at the project root or in `src/` — and `src/app.js` is the only one this project has. (The startup file is deliberately called `src/start.js`, *not* `server.js`: if Vercel could also pick that one, it might run the fail-fast startup inside a function, where a database hiccup exits the process and every request answers Vercel's bare "FUNCTION_INVOCATION_FAILED" instead of this API's JSON.) So the usual "connect, then listen" startup may never run, and `src/middleware/ensureDatabase.js` covers exactly that case: on the first request it opens the connection (once per instance, shared by every concurrent request), so the API connects either way, and an unreachable database is reported as an honest `503 degraded` on `/api/health` rather than as a crash. `app.set('trust proxy', 1)` is what then makes `req.protocol` read as `https`, so photo URLs come out as `https://…` instead of `http://…`.
 
 #### Option B — Render (needs a credit card)
 
@@ -700,7 +700,7 @@ cd android
 
 That APK is signed with the **debug keystore** on purpose (it is sideloaded, not published to the Play Store), and it is the *same* key as the debug build — so it installs **over** an existing debug build as an update instead of colliding with it.
 
-> The URL must match **exactly**. An APK built against `https://reprise-api.vercel.app/` reports "can't reach the server" against any other address — including a LAN one — which is the most common reason a shared APK fails on a friend's phone.
+> The URL must match **exactly**. An APK built against `https://fitness-tracker-eight-delta.vercel.app/` reports "can't reach the server" against any other address — including a LAN one — which is the most common reason a shared APK fails on a friend's phone.
 
 ### Things worth knowing once it is hosted
 
@@ -772,7 +772,7 @@ The base URL is defined **once** in `android/app/build.gradle.kts` as a `buildCo
 |---|---|---|
 | Android **emulator** | `http://10.0.2.2:4000/` | `10.0.2.2` is the emulator's alias for your computer's `localhost` |
 | **Physical phone** (same Wi-Fi) | `http://<your-computer-LAN-IP>:4000/` | e.g. `http://192.168.1.20:4000/` |
-| **Any phone, any network** | `https://<your-project>.vercel.app/` | the deployed API — the **release** build type, and the only one that works away from your own network |
+| **Any phone, any network** | `https://fitness-tracker-eight-delta.vercel.app/` | the deployed API — the **release** build type, and the only one that works away from your own network |
 
 For a physical device you must also:
 1. Change `API_BASE_URL` in `app/build.gradle.kts` to your LAN IP.
@@ -1202,7 +1202,7 @@ Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra
 - **Phase 7 (profile)** — on top of the existing "set and validate" coverage: an explicit `heightCm: null` **clears** the stored height (asserted in the response *and* in the database) while everything else is left untouched, which is the semantic the app's height editor depends on.
 - **Phase 7 (streaks)** — the day arithmetic in isolation (`utcDayNumber` counting whole days, and `dayNumberFromKey` reading a `$dateToString` key back) and the two streak helpers over hand-built day lists: a run counts consecutive days, a **gap breaks it**, a duplicate day counts once, and `longestStreak` finds the best run anywhere in the history rather than only the run at the end. Then end to end against real documents: an empty account reporting honest zeros, a three-day run reading `current: 3`, a second session on the same day **not** extending it (`activeDays` unchanged), an older, longer run still reported as `longest` after a break, and deleting the recent days dropping `current` to `0` while `longest` **survives**.
 - **Phase 7 (profile picture)** — the format sniffer in isolation (`pngBytes`/`jpegBytes`/`webpBytes` are each identified, while plain text, an **empty** buffer and a RIFF container that is not a WebP are all `null`), the name guard (`storedFileName` accepts only the app's own generated names and refuses a `null`/empty value, a foreign URL, the right directory with a name it would never write, path traversal both raw and percent-encoded, an unsupported extension and a malformed id), and `deletePhoto` reporting `false` for anything not ours. Then end to end over the real routes: an anonymous upload refused, no body / a non-image / a **JSON** body all `415`, a body over the limit `413`, an upload stored **and served back byte-identical** with the right `Content-Type` and reflected on the profile, the stored extension coming from the **bytes rather than the `Content-Type`** (a JPEG uploaded as `image/png` is stored `.jpg`), WebP accepted, replacing a photo deleting the one it replaced with nothing left behind, another user able to see the URL through search, a **URL that was never stored** answering `404`, a name that is not one of ours (including a traversal attempt) being refused **before any lookup reaches the database**, and deleting clearing both the profile and the stored bytes — a second delete being harmless, and a removal leaving a URL some *other* user set alone and touching no stored photo.
-- **Deployment** — `middleware/ensureDatabase.js` (the connection a serverless host relies on instead of `server.js`'s startup) stays off during tests: it passes a request straight through, calls `next()` exactly once and synchronously, and provably opens no connection of its own — otherwise every test that deliberately runs without MongoDB would first wait ten seconds for a connection that can never succeed. The shared connection attempt itself was verified by hand against both a live and a refused database: one attempt for five concurrent requests, `200` + `database.connected: true` when healthy, and `503 degraded` rather than a hang or a crash when not.
+- **Deployment** — `middleware/ensureDatabase.js` (the connection a serverless host relies on instead of `src/start.js`'s startup) stays off during tests: it passes a request straight through, calls `next()` exactly once and synchronously, and provably opens no connection of its own — otherwise every test that deliberately runs without MongoDB would first wait ten seconds for a connection that can never succeed. The shared connection attempt itself was verified by hand against both a live and a refused database: one attempt for five concurrent requests, `200` + `database.connected: true` when healthy, and `503 degraded` rather than a hang or a crash when not.
 
 > **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries, workouts, **photos** and friendships), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
@@ -1359,6 +1359,8 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 | **A friend gets "can't reach the server"** | the APK points at a **LAN** address, which means nothing on his network | give him the **release** APK, built against the deployed `https` API — see [Deploying the backend](#deploying-the-backend-so-it-works-off-your-network) |
 | Deployed API: `Failed to connect to MongoDB` in the host's log | Atlas has not allow-listed the host, or the URI/password is wrong | Atlas → Network Access → `0.0.0.0/0` (neither free host has a fixed IP), and percent-encode special characters in the password |
 | Deployed API: every route answers `404` (Vercel shows "404: NOT_FOUND") | the project's **Root Directory** is not `backend`, so no Express app was found to deploy | Vercel → Settings → Root Directory → `backend`, then redeploy |
+| Deployed API: Vercel returns `500 FUNCTION_INVOCATION_FAILED` on **every** route, even a wrong one | the function crashed before it could route anything, which is almost always an environment variable — most often `MONGODB_URI` still holding the **local** `mongodb://127.0.0.1:27017` value, so the API cannot reach a database (and Atlas is not allow-listed) | copy the **Atlas** `mongodb+srv://…/reprise…` string into the host's env vars, confirm `JWT_SECRET` is set, check Atlas → Network Access → `0.0.0.0/0`, then **redeploy** — env vars only take effect on a new deployment |
+| Deployed API: you changed an env var and nothing changed | variables are injected at deploy time, not read live | redeploy (Vercel: Deployments → ⋯ → Redeploy) |
 | Deployed API is slow on the first request | a cold start, or a sleeping Render free instance | expected and brief on Vercel; on Render keep it awake with an uptime monitor, or use a paid instance |
 | `gradlew: Permission denied` | lost the executable bit | `chmod +x android/gradlew` |
 | Android: `Failed to find Platform SDK ... android-37` | SDK Platform 37 not installed | Android Studio → SDK Manager → install **Android SDK Platform 37 (Android 17)**, or `sdkmanager "platforms;android-37.2"` |

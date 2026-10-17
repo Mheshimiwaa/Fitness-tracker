@@ -4,7 +4,7 @@
  * The lazy database connection (middleware/ensureDatabase.js) must stay OFF
  * during tests.
  *
- * `src/server.js` connects before it listens and the test helpers connect
+ * `src/start.js` connects before it listens and the test helpers connect
  * explicitly, so nothing here needs the middleware to help. If it ever started
  * connecting on its own, every test that deliberately runs WITHOUT a database
  * would first wait ten seconds for a connection that cannot succeed — turning a

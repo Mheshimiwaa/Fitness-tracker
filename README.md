@@ -495,8 +495,8 @@ reprise/
     │   │   ├── env.js                     # central env loading & validation
     │   │   └── constants.js               # shared rules (goals, units, ranges, BMI bands)
     │   ├── database/                      # connection, collections, indexes
-    │   ├── middleware/                    # requestLogger, notFound, errorHandler,
-    │   │                                  # authenticate, validate, rateLimiter
+    │   ├── middleware/                    # ensureDatabase, requestLogger, notFound,
+    │   │                                  # errorHandler, authenticate, validate, rateLimiter
     │   ├── routes/                        # index, health, auth, users, weights, dashboard,
     │   │                                  # workouts, progression, friends, leaderboard, photoFiles
     │   ├── controllers/                   # auth, users, weights, workouts, dashboard, progression,
@@ -516,7 +516,8 @@ reprise/
         ├── friends.test.js
         ├── leaderboard.test.js
         ├── streaks.test.js
-        └── photos.test.js
+        ├── photos.test.js
+        └── ensureDatabase.test.js
 ```
 
 ---
@@ -635,39 +636,61 @@ If the database is unreachable the endpoint returns **503** with `"status": "deg
 
 Everything above runs the API on **your own machine**, which means it is only reachable by devices on **your** network: `http://10.0.2.2:4000/` is an emulator alias, and a LAN address like `http://192.168.8.102:4000/` means nothing to a phone on mobile data. To share the app with someone else, the API needs a **public https URL**, and that URL is compiled into the APK.
 
-The deployed configuration in this repository is **Render** (a free web service) + **MongoDB Atlas** (a free M0 cluster), described by `render.yaml`.
+The database side is always **MongoDB Atlas** (a free M0 cluster). For the API itself this repository supports two free hosts — pick whichever suits you:
+
+| | **Vercel** (recommended) | **Render** |
+|---|---|---|
+| Credit card / bank details required | **No** | Yes |
+| Configuration | automatic — Vercel detects the Express app | `render.yaml` (Blueprint) |
+| Free-tier behaviour | does not sleep; an idle instance wakes in well under a second | sleeps after 15 minutes, and waking takes tens of seconds |
 
 ### 1. MongoDB Atlas
 
 1. Create a free **M0** cluster at <https://cloud.mongodb.com> (see [MongoDB Atlas setup](#mongodb-atlas-setup)).
 2. **Database Access** → create a database user, and put the password in the connection string. If it contains any of `` : / ? # [ ] @ ``, [percent-encode it](https://www.mongodb.com/docs/manual/reference/connection-string/#std-label-connection-string-special-characters) (`@` → `%40`).
-3. **Network Access** → allow `0.0.0.0/0`. A free Render service does **not** have a static outbound IP, so the usual "allow only my IP" rule cannot be used — and your *own* IP would never be the one connecting anyway, because the requests come from Render's servers, not from your laptop.
+3. **Network Access** → allow `0.0.0.0/0`. Neither free host has a static outbound IP, so the usual "allow only my IP" rule cannot be used — and your *own* IP would never be the one connecting anyway, because the requests come from the host's servers, not from your laptop.
    *This is the one place the project trades a little security for practicality: the database is protected by its password and by TLS, but it is not IP-restricted. Nothing secret is ever stored in the app's URLs.*
 4. **Connect → Drivers** → copy the string and add the database name, so it ends `/reprise?retryWrites=true&w=majority`.
 
-### 2. Render
+### 2. Deploy the API
 
-1. Push this repository to GitHub first — Render builds from the repository, not from your working copy.
-2. <https://dashboard.render.com> → **New → Blueprint** → pick the repository → **Apply**. `render.yaml` supplies the runtime, the start command, the health check and most of the environment, and sets `rootDir: backend` so the Android app is never built.
-3. When prompted, fill in the two values the blueprint deliberately leaves blank:
+Either way, push this repository to GitHub first — both hosts build from the repository, not from your working copy.
+
+#### Option A — Vercel (no credit card)
+
+1. <https://dashboard.vercel.com> → **Add New… → Project** → import the repository.
+2. **Settings → Root Directory** → set it to **`backend`**. The repository also contains the Android project, and Vercel must build only the API. *(Vercel detects the Express app and its Node version by itself; there is no build or start command to fill in.)*
+3. **Settings → Environment Variables** → add:
+   - **`MONGODB_URI`** — the Atlas string from step 1.
+   - **`JWT_SECRET`** — a long random one: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`
+   - **`NODE_ENV`** = `production` — Vercel usually sets this itself, but pinning it makes the behaviour explicit rather than assumed. It is not cosmetic: in production the error handler answers unexpected `500`s with a generic message instead of leaking internal details.
+4. **Deploy**, and let the first build finish without an error.
+5. Your URL is shown on the deployment page, e.g. `https://reprise-api.vercel.app`. Confirm the API *and* the database are live:
+   ```bash
+   curl https://<your-project>.vercel.app/api/health
+   ```
+   It must return `"status":"ok"` with `"database":{"connected":true …}`. If Vercel shortened or disambiguated your project name, note the real URL — it goes into the app (next step) and into `build.gradle.kts`.
+
+> **How it runs there.** Vercel does not necessarily execute `src/server.js`, so it may never run the usual "connect, then listen" startup. `src/middleware/ensureDatabase.js` covers exactly that case: on the first request it opens the connection (once per instance, shared by every concurrent request), so the API connects whether the host starts it the normal way or hands the Express app straight to its own request handler. `app.set('trust proxy', 1)` is what then makes `req.protocol` read as `https`, so photo URLs come out as `https://…` instead of `http://…`.
+
+#### Option B — Render (needs a credit card)
+
+1. <https://dashboard.render.com> → **New → Blueprint** → pick the repository → **Apply**. `render.yaml` supplies the runtime, the start command, the health check and most of the environment, and sets `rootDir: backend` so the Android app is never built.
+2. When prompted, fill in the two values the blueprint deliberately leaves blank:
    - **`MONGODB_URI`** — the Atlas string from step 1.
    - **`JWT_SECRET`** — Render generates a long random one for you (leave the generated value).
-4. Watch the log. A successful start ends with:
+3. Watch the log. A successful start ends with:
    ```
    INFO  - Connected to MongoDB (db="reprise", host="…")
    INFO  - MongoDB indexes ensured.
    INFO  - RepRise API listening on http://localhost:10000
    ```
    The service is only marked **Live** once `/api/health` answers `200`, and that endpoint reports the database — so a green deploy really means the API *and* the database are working.
-5. Your URL is `https://<service-name>.onrender.com`. Confirm it:
-   ```bash
-   curl https://reprise-api.onrender.com/api/health
-   ```
-   If the service name was already taken, Render appends a suffix — make a note of the real URL, because it goes into the app (next step) and into `render.yaml` and `build.gradle.kts` so the two agree.
+4. Your URL is `https://<service-name>.onrender.com`. Confirm it with the same `curl` as above. If the name was already taken, Render appends a suffix — make a note of the real URL, because it goes into the app (next step) and into `render.yaml` and `build.gradle.kts` so the two agree.
 
 ### 3. Point the app at it
 
-`android/app/build.gradle.kts` already has `https://reprise-api.onrender.com/` in the **release** build type, which is the one you hand to other people. If your URL differs, change that one line. Then:
+`android/app/build.gradle.kts` has the deployed URL baked into the **release** build type, which is the one you hand to other people. If your URL differs, change that one line. Then:
 
 ```bash
 cd android
@@ -677,12 +700,16 @@ cd android
 
 That APK is signed with the **debug keystore** on purpose (it is sideloaded, not published to the Play Store), and it is the *same* key as the debug build — so it installs **over** an existing debug build as an update instead of colliding with it.
 
+> The URL must match **exactly**. An APK built against `https://reprise-api.vercel.app/` reports "can't reach the server" against any other address — including a LAN one — which is the most common reason a shared APK fails on a friend's phone.
+
 ### Things worth knowing once it is hosted
 
-- **The free plan sleeps** after 15 minutes without traffic, and the next request has to wait for the service to wake (tens of seconds). A sleeping service looks exactly like "can't reach the server" to the app. If that matters for a demonstration, keep it awake with a free uptime monitor (for example UptimeRobot or cron-job.org) pinging `https://<service>.onrender.com/api/health` every 5 minutes. The alternative is a paid instance, which does not sleep.
+- **Vercel does not sleep.** An idle instance is woken by the next request, which costs well under a second, so an app nobody has touched for a day still answers promptly. *(Render's free instance behaves differently: it sleeps after 15 minutes and the next request waits tens of seconds for it to wake, which looks exactly like "can't reach the server" to the app. Keep it awake with a free uptime monitor — UptimeRobot, cron-job.org — pinging `https://<service>.onrender.com/api/health` every 5 minutes, or use a paid instance.)*
+- **4.5 MB is the platform's request and response ceiling**, which is below this API's `PHOTO_MAX_BYTES` (5 MB). The app downscales a picture to a 512-pixel JPEG of a few dozen kilobytes, so this never bites in practice — but a hand-crafted upload larger than 4.5 MB is refused by Vercel before the API ever sees it, and the error returned is Vercel's rather than this API's JSON shape.
+- **Rate limiting is per instance and in memory.** A serverless host runs several instances and they do not share counters, so the limit is approximate: it blunts a burst from one client, but a determined attacker could spread across instances. Production would use a shared store such as Redis.
 - **Photo bytes live in the database** (`photos`), not on the server's disk, because a hosted filesystem is wiped on every deploy and restart. That is why this project stores them there.
 - **Everyone must use the same base URL.** A photo URL is absolute and built from the request's own host, so a picture uploaded through one address is only reachable through that address. If two people use two different URLs (one LAN, one public), one of them sees a broken avatar.
-- **`ENABLE_HTTP_LOGS=true`** is worth keeping on the host: Render's log view is where you watch a friend's registration actually arrive.
+- **`ENABLE_HTTP_LOGS=true`** is worth keeping on the host: the host's log view is where you watch a friend's registration actually arrive.
 - **Local development is unaffected.** Your `.env` keeps pointing at local `mongod`, and debug builds keep pointing at `10.0.2.2`. The deployed instance uses Atlas, so it has its own separate data.
 
 ### Inspecting the database (development scripts)
@@ -745,7 +772,7 @@ The base URL is defined **once** in `android/app/build.gradle.kts` as a `buildCo
 |---|---|---|
 | Android **emulator** | `http://10.0.2.2:4000/` | `10.0.2.2` is the emulator's alias for your computer's `localhost` |
 | **Physical phone** (same Wi-Fi) | `http://<your-computer-LAN-IP>:4000/` | e.g. `http://192.168.1.20:4000/` |
-| **Any phone, any network** | `https://<service>.onrender.com/` | the deployed API — the **release** build type, and the only one that works away from your own network |
+| **Any phone, any network** | `https://<your-project>.vercel.app/` | the deployed API — the **release** build type, and the only one that works away from your own network |
 
 For a physical device you must also:
 1. Change `API_BASE_URL` in `app/build.gradle.kts` to your LAN IP.
@@ -1163,7 +1190,7 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **145 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **147 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
@@ -1175,6 +1202,7 @@ Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra
 - **Phase 7 (profile)** — on top of the existing "set and validate" coverage: an explicit `heightCm: null` **clears** the stored height (asserted in the response *and* in the database) while everything else is left untouched, which is the semantic the app's height editor depends on.
 - **Phase 7 (streaks)** — the day arithmetic in isolation (`utcDayNumber` counting whole days, and `dayNumberFromKey` reading a `$dateToString` key back) and the two streak helpers over hand-built day lists: a run counts consecutive days, a **gap breaks it**, a duplicate day counts once, and `longestStreak` finds the best run anywhere in the history rather than only the run at the end. Then end to end against real documents: an empty account reporting honest zeros, a three-day run reading `current: 3`, a second session on the same day **not** extending it (`activeDays` unchanged), an older, longer run still reported as `longest` after a break, and deleting the recent days dropping `current` to `0` while `longest` **survives**.
 - **Phase 7 (profile picture)** — the format sniffer in isolation (`pngBytes`/`jpegBytes`/`webpBytes` are each identified, while plain text, an **empty** buffer and a RIFF container that is not a WebP are all `null`), the name guard (`storedFileName` accepts only the app's own generated names and refuses a `null`/empty value, a foreign URL, the right directory with a name it would never write, path traversal both raw and percent-encoded, an unsupported extension and a malformed id), and `deletePhoto` reporting `false` for anything not ours. Then end to end over the real routes: an anonymous upload refused, no body / a non-image / a **JSON** body all `415`, a body over the limit `413`, an upload stored **and served back byte-identical** with the right `Content-Type` and reflected on the profile, the stored extension coming from the **bytes rather than the `Content-Type`** (a JPEG uploaded as `image/png` is stored `.jpg`), WebP accepted, replacing a photo deleting the one it replaced with nothing left behind, another user able to see the URL through search, a **URL that was never stored** answering `404`, a name that is not one of ours (including a traversal attempt) being refused **before any lookup reaches the database**, and deleting clearing both the profile and the stored bytes — a second delete being harmless, and a removal leaving a URL some *other* user set alone and touching no stored photo.
+- **Deployment** — `middleware/ensureDatabase.js` (the connection a serverless host relies on instead of `server.js`'s startup) stays off during tests: it passes a request straight through, calls `next()` exactly once and synchronously, and provably opens no connection of its own — otherwise every test that deliberately runs without MongoDB would first wait ten seconds for a connection that can never succeed. The shared connection attempt itself was verified by hand against both a live and a refused database: one attempt for five concurrent requests, `200` + `database.connected: true` when healthy, and `503 degraded` rather than a hang or a crash when not.
 
 > **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries, workouts, **photos** and friendships), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
@@ -1329,8 +1357,9 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 | Android: `Cleartext HTTP traffic not permitted` | plain-HTTP URL not allow-listed | add your host to `res/xml/network_security_config.xml`, or use the deployed `https` API |
 | Android: cannot reach the backend (your own device) | wrong base URL | emulator → `10.0.2.2`; device on the same Wi-Fi → your LAN IP, or `adb reverse tcp:4000 tcp:4000` |
 | **A friend gets "can't reach the server"** | the APK points at a **LAN** address, which means nothing on his network | give him the **release** APK, built against the deployed `https` API — see [Deploying the backend](#deploying-the-backend-so-it-works-off-your-network) |
-| Deployed API: `Failed to connect to MongoDB` in the Render log | Atlas has not allow-listed Render, or the URI/password is wrong | Atlas → Network Access → `0.0.0.0/0` (free hosts have no fixed IP), and percent-encode special characters in the password |
-| Deployed API is slow on the first request | the free instance was asleep | expected on the free plan; keep it awake with an uptime monitor, or use a paid instance |
+| Deployed API: `Failed to connect to MongoDB` in the host's log | Atlas has not allow-listed the host, or the URI/password is wrong | Atlas → Network Access → `0.0.0.0/0` (neither free host has a fixed IP), and percent-encode special characters in the password |
+| Deployed API: every route answers `404` (Vercel shows "404: NOT_FOUND") | the project's **Root Directory** is not `backend`, so no Express app was found to deploy | Vercel → Settings → Root Directory → `backend`, then redeploy |
+| Deployed API is slow on the first request | a cold start, or a sleeping Render free instance | expected and brief on Vercel; on Render keep it awake with an uptime monitor, or use a paid instance |
 | `gradlew: Permission denied` | lost the executable bit | `chmod +x android/gradlew` |
 | Android: `Failed to find Platform SDK ... android-37` | SDK Platform 37 not installed | Android Studio → SDK Manager → install **Android SDK Platform 37 (Android 17)**, or `sdkmanager "platforms;android-37.2"` |
 | Android: *"requires ... compile against version 37 or later"* | `compileSdk` too low for the current AndroidX libraries | keep the `compileSdk { version = release(37) { minorApiLevel = 2 } }` block as-is |
@@ -1414,5 +1443,5 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 - The reminder's **sound** is chosen from the phone's files, not uploaded to the account, so it too does not follow the user to a second device — the same trade the reminder's time and days already make.
 - The Friends screen and the leaderboard show each person's **photo** (via Coil), falling back to their **initial** when they have none — the same avatar the profile shows. Friend requests still carry **no message**, and the friends list is capped at the server's `FRIEND_LIST_MAX` (500).
 - Optional future work: **push** notifications (the gym reminder is local-only, so nothing is sent from a server), friend workout sharing, data export, image moderation, moving photos from the database to object storage.
-- **On the free hosting plan the API sleeps** after 15 minutes of inactivity, and the first request afterwards waits for it to wake (tens of seconds) — which the app reports as an unreachable server. Keeping it awake needs an external uptime monitor, or a paid instance that does not sleep. See [Deploying the backend](#deploying-the-backend-so-it-works-off-your-network).
+- **On a free host the API is not always already running.** Vercel wakes an idle instance in well under a second, so this is invisible in practice; Render's free instance *sleeps* after 15 minutes and the first request afterwards waits tens of seconds, which the app reports as an unreachable server. Vercel's serverless model brings two more honest caveats: the platform caps a request or response at **4.5 MB** (above this API's own 5 MB photo limit, and far above the few dozen kilobytes the app actually sends), and the rate limiter keeps its counters **in memory per instance**, so its limit is approximate rather than a hard global one. See [Deploying the backend](#deploying-the-backend-so-it-works-off-your-network).
 - **The deployed API and a local development setup are two separate worlds**: the deployed instance uses Atlas, your machine uses local `mongod`, and each keeps its own data. A photo URL is absolute and built from the host that received the upload, so mixing the two (one user on the LAN address, another on the public URL) results in a broken avatar for one of them. Everyone must use the same base URL.

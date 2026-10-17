@@ -208,7 +208,7 @@ async function deletePhoto(url) {
  * Store a new profile photo and point the user's profile at it.
  *
  * `origin` is the scheme and host the request arrived on (e.g.
- * "https://reprise-api.onrender.com"), so the URL we store works for the client
+ * "https://reprise-api.vercel.app"), so the URL we store works for the client
  * that just uploaded — a phone on the LAN, an emulator on 10.0.2.2, a hosted
  * deployment behind its proxy. Behind a proxy, `app.set('trust proxy', ...)`
  * is what makes the scheme `https` rather than `http`.

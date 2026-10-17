@@ -7,8 +7,10 @@
  * new client per request would exhaust the connection pool.
  *
  * Lifecycle:
- *   connect()  -> called once at startup
+ *   connect()  -> called once at startup, or lazily by middleware/ensureDatabase.js
+ *                 when a serverless host skips startup (see that file)
  *   getDb()    -> used by repositories/services to access collections
+ *   isConnected() -> true once the pool is live
  *   ping()     -> used by the health-check endpoint
  *   close()    -> called on graceful shutdown
  */
@@ -52,6 +54,16 @@ function getDb() {
   return db;
 }
 
+/**
+ * True once connect() has succeeded and the pool is live.
+ *
+ * Used by the ensureDatabase middleware to decide whether a request still needs
+ * to trigger the connection (see middleware/ensureDatabase.js).
+ */
+function isConnected() {
+  return db !== null;
+}
+
 /** Returns true when the database responds to a ping, false otherwise. */
 async function ping() {
   if (!db) return false;
@@ -73,4 +85,4 @@ async function close() {
   }
 }
 
-module.exports = { connect, getDb, ping, close };
+module.exports = { connect, getDb, isConnected, ping, close };

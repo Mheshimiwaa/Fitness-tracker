@@ -55,13 +55,14 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // The DEPLOYED backend (Render — see render.yaml). A release build
-            // is the one you give to other people: it needs a URL that works
-            // from any network, and https, which is why it is not a LAN address.
+            // The DEPLOYED backend (Vercel — see "Deploying the backend" in
+            // README.md). A release build is the one you give to other people:
+            // it needs a URL that works from any network, and https, which is
+            // why it is not a LAN address.
             //
-            // If the service ends up with a different name, change this ONE
-            // line and rebuild — nothing else depends on the host.
-            buildConfigField("String", "API_BASE_URL", "\"https://reprise-api.onrender.com/\"")
+            // If the project ends up with a different Vercel domain, change
+            // this ONE line and rebuild — nothing else depends on the host.
+            buildConfigField("String", "API_BASE_URL", "\"https://reprise-api.vercel.app/\"")
             // Signed with the Debug keystore on purpose: this APK is handed to
             // friends to sideload, not published to the Play Store, and using
             // the same key as the debug build means it INSTALLS OVER an already

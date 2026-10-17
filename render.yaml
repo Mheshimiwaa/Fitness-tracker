@@ -1,6 +1,11 @@
 # ---------------------------------------------------------------------------
 # RepRise — Render Blueprint
 #
+# This is the ALTERNATIVE deployment: Render requires credit-card details on
+# sign-up, so the README recommends Vercel instead (which does not, and needs no
+# configuration file at all — it detects the Express app). Use this file only if
+# you are deploying to Render.
+#
 # This file describes the API as a hosted web service, so the deployment is
 # configuration-as-code instead of a list of dashboard clicks. On Render:
 #

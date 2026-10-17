@@ -13,6 +13,7 @@ const helmet = require('helmet');
 
 const env = require('./config/env');
 const { PHOTO_URL_PREFIX } = require('./config/constants');
+const ensureDatabase = require('./middleware/ensureDatabase');
 const requestLogger = require('./middleware/requestLogger');
 const notFound = require('./middleware/notFound');
 const errorHandler = require('./middleware/errorHandler');
@@ -58,6 +59,19 @@ app.use(express.json({ limit: '100kb' }));
 
 // Development request logging (method, route, status, duration, request id).
 app.use(requestLogger);
+
+/**
+ * Make sure the database is reachable before a route touches it.
+ *
+ * On a normal machine `server.js` has already connected and this is a single
+ * boolean check. On a serverless host (Vercel), where no startup step runs, this
+ * is what actually opens the connection — see middleware/ensureDatabase.js.
+ *
+ * It sits before the routes (and before the /uploads mount below) so photos are
+ * covered too, but AFTER body parsing, so a malformed or oversized request is
+ * rejected without waking the database.
+ */
+app.use(ensureDatabase);
 
 // All application routes live under /api.
 app.use('/api', apiRoutes);

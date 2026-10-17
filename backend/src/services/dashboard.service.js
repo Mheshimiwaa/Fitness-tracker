@@ -8,8 +8,9 @@
  * slow connection.
  *
  * Phase 3 populates the weight and BMI sections. Phase 4 adds the workouts
- * section. Later phases extend this same payload (streaks, leaderboard) so the
- * app never has to be rewired — it simply starts receiving more fields.
+ * section. Phase 7 adds the streak section. Later phases extend this same
+ * payload (leaderboard) so the app never has to be rewired — it simply starts
+ * receiving more fields.
  *
  * Sections with no data yet are returned as `null` rather than omitted, so the
  * client can show an honest empty state instead of guessing.
@@ -17,6 +18,7 @@
 
 const weightService = require('./weight.service');
 const workoutService = require('./workout.service');
+const streakService = require('./streak.service');
 const { calculateBmi } = require('./bmi.service');
 
 /** How many days back the "recent change" number looks. */
@@ -30,9 +32,10 @@ const CHANGE_WINDOW_DAYS = 30;
 async function getDashboard(user) {
   const preferredUnit = user.weightUnit || 'kg';
 
-  const [summary, workouts] = await Promise.all([
+  const [summary, workouts, streak] = await Promise.all([
     weightService.getSummary(user._id, preferredUnit, { days: CHANGE_WINDOW_DAYS }),
     workoutService.getRecentSummary(user._id),
+    streakService.streakFor(user._id),
   ]);
 
   const latestWeightKg = summary.latest ? summary.latest.weightKg : null;
@@ -64,6 +67,7 @@ async function getDashboard(user) {
       recentVolumeKg: workouts.recentVolumeKg,
       lastWorkoutAt: workouts.lastWorkoutAt,
     },
+    streak,
     bmi,
     bmiUnavailableReason,
     generatedAt: new Date(),

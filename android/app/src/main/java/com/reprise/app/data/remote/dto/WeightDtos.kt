@@ -104,6 +104,7 @@ data class BmiDto(
 data class DashboardDto(
     val weight: DashboardWeightDto = DashboardWeightDto(),
     val workouts: DashboardWorkoutsDto = DashboardWorkoutsDto(),
+    val streak: DashboardStreakDto = DashboardStreakDto(),
     val bmi: BmiDto? = null,
     val bmiUnavailableReason: String? = null,
 )

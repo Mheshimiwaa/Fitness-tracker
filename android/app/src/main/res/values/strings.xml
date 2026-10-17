@@ -194,6 +194,16 @@
     <string name="home_action_log_workout">Log workout</string>
     <string name="home_action_view_workouts">View workouts</string>
 
+    <!-- Dashboard (Home): training streak -->
+    <string name="home_streak_title">Streak</string>
+    <string name="home_streak_best">Best: %1$s</string>
+    <string name="home_streak_none_title">No streak yet</string>
+    <string name="home_streak_none_message">Train on two days in a row and your streak begins.</string>
+    <string name="home_streak_at_risk">Train today to keep it alive — a missed day ends it.</string>
+    <string name="home_streak_active">Trained today. Come back tomorrow to extend it.</string>
+    <string name="home_streak_ended_title">Streak ended</string>
+    <string name="home_streak_ended_message">Log a workout today to start a new one.</string>
+
     <!-- Progressive overload assistant (Phase 5) -->
     <string name="title_progress">Progress</string>
     <string name="progression_list_hint">Tap an exercise to see how your last session compares with the one before it.</string>
@@ -254,6 +264,14 @@
     <plurals name="workouts_count">
         <item quantity="one">%1$d session</item>
         <item quantity="other">%1$d sessions</item>
+    </plurals>
+    <plurals name="home_streak_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="home_streak_days_in_a_row">
+        <item quantity="one">%1$d day in a row</item>
+        <item quantity="other">%1$d days in a row</item>
     </plurals>
     <plurals name="workout_exercises">
         <item quantity="one">%1$d exercise</item>

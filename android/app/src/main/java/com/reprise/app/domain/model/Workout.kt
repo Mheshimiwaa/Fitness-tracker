@@ -69,3 +69,55 @@ data class WorkoutStats(
     /** True when the user has never logged a workout. */
     val isEmpty: Boolean get() = totalCount == 0
 }
+
+/**
+ * The streak section of the dashboard: consecutive days trained.
+ *
+ * The server counts days in UTC and decides whether the run is still standing;
+ * the app only has to choose the right words for it — see [streakStatus].
+ */
+data class StreakStats(
+    /** Consecutive days up to today (or yesterday, while today is still young). */
+    val current: Int,
+    /** The best run ever, which survives a broken streak. */
+    val longest: Int,
+    /** True when a workout has already been logged today. */
+    val trainedToday: Boolean,
+    /** Distinct days ever trained — zero means the user has never logged one. */
+    val activeDays: Int,
+)
+
+/**
+ * What the streak card should say, derived from the numbers alone.
+ *
+ * Keeping this a pure function means the awkward part — the difference between
+ * "not trained yet today" and "your streak is over" — is unit-tested instead of
+ * hiding inside a composable.
+ */
+enum class StreakStatus {
+    /** No workout has ever been logged, so there is nothing to continue. */
+    NOT_STARTED,
+
+    /** A run is alive and today has not been trained yet. */
+    AT_RISK,
+
+    /** A run is alive and today is already done. */
+    ACTIVE,
+
+    /** A run existed and a whole day was missed. */
+    ENDED,
+}
+
+/**
+ * Classify a streak for the UI.
+ *
+ * AT_RISK is deliberately distinct from ENDED: on the morning after training,
+ * the run is still intact and the user should be encouraged, not told they
+ * failed. It becomes ENDED only once the server reports the run as gone.
+ */
+fun streakStatus(streak: StreakStats): StreakStatus = when {
+    streak.activeDays == 0 -> StreakStatus.NOT_STARTED
+    streak.current == 0 -> StreakStatus.ENDED
+    streak.trainedToday -> StreakStatus.ACTIVE
+    else -> StreakStatus.AT_RISK
+}

@@ -15,6 +15,7 @@ import com.reprise.app.domain.model.Bmi
 import com.reprise.app.domain.model.BmiCategory
 import com.reprise.app.domain.model.BmiUnavailableReason
 import com.reprise.app.domain.model.Dashboard
+import com.reprise.app.domain.model.StreakStats
 import com.reprise.app.domain.model.WeightChange
 import com.reprise.app.domain.model.WeightEntry
 import com.reprise.app.domain.model.WeightHistory
@@ -139,6 +140,12 @@ private fun DashboardDto.toDomain(): Dashboard = Dashboard(
         recentDays = workouts.recentDays,
         recentVolumeKg = workouts.recentVolumeKg,
         lastWorkoutAt = workouts.lastWorkoutAt,
+    ),
+    streak = StreakStats(
+        current = streak.current,
+        longest = streak.longest,
+        trainedToday = streak.trainedToday,
+        activeDays = streak.activeDays,
     ),
     bmi = bmi?.toDomain(),
     bmiUnavailableReason = BmiUnavailableReason.fromApi(bmiUnavailableReason),

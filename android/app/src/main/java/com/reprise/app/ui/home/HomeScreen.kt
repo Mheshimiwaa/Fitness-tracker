@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -39,11 +40,14 @@ import com.reprise.app.domain.model.Bmi
 import com.reprise.app.domain.model.BmiCategory
 import com.reprise.app.domain.model.BmiUnavailableReason
 import com.reprise.app.domain.model.Dashboard
+import com.reprise.app.domain.model.StreakStats
+import com.reprise.app.domain.model.StreakStatus
 import com.reprise.app.domain.model.User
 import com.reprise.app.domain.model.WeightChange
 import com.reprise.app.domain.model.WeightEntry
 import com.reprise.app.domain.model.WeightUnit
 import com.reprise.app.domain.model.WorkoutStats
+import com.reprise.app.domain.model.streakStatus
 import com.reprise.app.ui.theme.RepRiseTheme
 import com.reprise.app.util.formatShortDate
 import com.reprise.app.util.formatSignedWeight
@@ -54,8 +58,8 @@ import com.reprise.app.util.formatWeight
  * Home / Dashboard.
  *
  * Shows the signed-in user a real summary loaded from `GET /api/dashboard`:
- * their latest body weight, the change over the last 30 days, their BMI, and how
- * much they have been training.
+ * their training streak, their latest body weight, the change over the last 30
+ * days, their BMI, and how much they have been training.
  *
  * Every number here comes from the server — there is no fabricated data, and
  * empty sections explain what to do next rather than showing a fake value.
@@ -102,6 +106,7 @@ fun HomeScreen(
                     onOpenWorkouts = onOpenWorkouts,
                     onLogWorkout = onLogWorkout,
                 )
+                StreakCard(dashboard = dashboard)
                 BmiCard(dashboard = dashboard)
             }
         }
@@ -351,6 +356,105 @@ private fun StatColumn(label: String, value: String) {
     }
 }
 
+/**
+ * Consecutive days trained.
+ *
+ * The card is written to ENCOURAGE, not to scold. A day with no workout yet is
+ * not a failure — the streak is still standing until the day is over — so the
+ * copy for that state invites the user to train today instead of reporting a
+ * loss. The personal record is shown alongside the current run whenever the user
+ * has ever done better, which is exactly when it is worth knowing.
+ */
+@Composable
+private fun StreakCard(dashboard: Dashboard) {
+    val streak = dashboard.streak
+    val status = streakStatus(streak)
+
+    RepRiseCard {
+        CardHeader(
+            title = stringResource(R.string.home_streak_title),
+            leading = {
+                Icon(
+                    painter = painterResource(R.drawable.ic_flame),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+            },
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        when (status) {
+            StreakStatus.NOT_STARTED, StreakStatus.ENDED -> {
+                Text(
+                    text = stringResource(
+                        if (status == StreakStatus.NOT_STARTED) {
+                            R.string.home_streak_none_title
+                        } else {
+                            R.string.home_streak_ended_title
+                        }
+                    ),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(streakMessageRes(status)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            StreakStatus.AT_RISK, StreakStatus.ACTIVE -> {
+                Text(
+                    text = streak.current.toString(),
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = pluralStringResource(
+                        R.plurals.home_streak_days_in_a_row,
+                        streak.current,
+                        streak.current,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(streakMessageRes(status)),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+
+        // The record is only interesting while it is still ahead of the user.
+        if (streak.longest > streak.current) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(
+                    R.string.home_streak_best,
+                    pluralStringResource(
+                        R.plurals.home_streak_days,
+                        streak.longest,
+                        streak.longest,
+                    ),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** The line under the streak number explaining what to do now. */
+private fun streakMessageRes(status: StreakStatus): Int = when (status) {
+    StreakStatus.NOT_STARTED -> R.string.home_streak_none_message
+    StreakStatus.AT_RISK -> R.string.home_streak_at_risk
+    StreakStatus.ACTIVE -> R.string.home_streak_active
+    StreakStatus.ENDED -> R.string.home_streak_ended_message
+}
+
 /** BMI, or an explanation of what is still missing. */
 @Composable
 private fun BmiCard(dashboard: Dashboard) {
@@ -446,6 +550,12 @@ private fun previewDashboard(
         recentVolumeKg = 0.0,
         lastWorkoutAt = null,
     ),
+    streak: StreakStats = StreakStats(
+        current = 0,
+        longest = 0,
+        trainedToday = false,
+        activeDays = 0,
+    ),
 ): Dashboard = Dashboard(
     latestWeight = latestWeight,
     previousWeight = null,
@@ -453,6 +563,7 @@ private fun previewDashboard(
     changeWindowDays = 30,
     weightChange = weightChange,
     workouts = workouts,
+    streak = streak,
     bmi = bmi,
     bmiUnavailableReason = bmiUnavailableReason,
 )
@@ -490,6 +601,16 @@ private fun HomeScreenPreview() {
                 onOpenWorkouts = {},
                 onLogWorkout = {},
             )
+            StreakCard(
+                dashboard = previewDashboard(
+                    streak = StreakStats(
+                        current = 5,
+                        longest = 12,
+                        trainedToday = false,
+                        activeDays = 34,
+                    ),
+                ),
+            )
             BmiCard(
                 dashboard = previewDashboard(
                     bmi = Bmi(value = 25.4, category = BmiCategory.OVERWEIGHT),
@@ -510,6 +631,7 @@ private fun HomeScreenEmptyPreview() {
                 onOpenWorkouts = {},
                 onLogWorkout = {},
             )
+            StreakCard(dashboard = previewDashboard())
             BmiCard(
                 dashboard = previewDashboard(
                     bmiUnavailableReason = BmiUnavailableReason.NO_HEIGHT,

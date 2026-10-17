@@ -7,6 +7,7 @@ import com.reprise.app.data.remote.dto.BmiDto
 import com.reprise.app.data.remote.dto.CreateWeightRequest
 import com.reprise.app.data.remote.dto.CreateWorkoutRequest
 import com.reprise.app.data.remote.dto.DashboardDto
+import com.reprise.app.data.remote.dto.DashboardStreakDto
 import com.reprise.app.data.remote.dto.DashboardWeightDto
 import com.reprise.app.data.remote.dto.DashboardWorkoutsDto
 import com.reprise.app.data.remote.dto.ExerciseCatalogueDto
@@ -36,7 +37,9 @@ import com.reprise.app.data.remote.dto.WorkoutEnvelopeDto
 import com.reprise.app.data.remote.dto.WorkoutListDto
 import com.reprise.app.domain.model.BmiCategory
 import com.reprise.app.domain.model.BmiUnavailableReason
+import com.reprise.app.domain.model.StreakStatus
 import com.reprise.app.domain.model.WeightUnit
+import com.reprise.app.domain.model.streakStatus
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -159,6 +162,43 @@ class WeightRepositoryTest {
         assertEquals(1982.0, stats.recentVolumeKg, 0.0001)
         assertEquals("2026-10-14T08:33:57.367Z", stats.lastWorkoutAt)
         assertFalse(stats.isEmpty)
+    }
+
+    @Test
+    fun `the dashboard carries the streak section`() = runBlocking {
+        val api = FakeApi(
+            dashboardResponse = Response.success(
+                DashboardDto(
+                    streak = DashboardStreakDto(
+                        current = 5,
+                        longest = 12,
+                        trainedToday = false,
+                        activeDays = 34,
+                    )
+                )
+            )
+        )
+
+        val streak = (WeightRepository(api).dashboard() as ApiResult.Success).data.streak
+
+        assertEquals(5, streak.current)
+        assertEquals(12, streak.longest)
+        assertFalse(streak.trainedToday)
+        assertEquals(34, streak.activeDays)
+    }
+
+    @Test
+    fun `a dashboard without a streak section reads as never having trained`() = runBlocking {
+        // An older server, or an error payload, must not look like a 0-day
+        // streak that "ended" — the card has to be able to say "no streak yet".
+        val api = FakeApi(dashboardResponse = Response.success(DashboardDto()))
+
+        val streak = (WeightRepository(api).dashboard() as ApiResult.Success).data.streak
+
+        assertEquals(0, streak.current)
+        assertEquals(0, streak.longest)
+        assertEquals(0, streak.activeDays)
+        assertEquals(StreakStatus.NOT_STARTED, streakStatus(streak))
     }
 
     @Test

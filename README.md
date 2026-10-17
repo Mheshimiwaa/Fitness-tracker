@@ -54,7 +54,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | Progressive overload comparison + rule-based suggestions | ✅ Phase 5 |
 | Friends (search, request, accept/reject, list, remove) | ✅ Phase 6a |
 | Weekly leaderboard scored on the server | ✅ Phase 6b |
-| Activity streaks (current + longest) | Planned (Phase 7) |
+| Activity streaks (current + longest) | ✅ Phase 7 |
 | Settings (theme, unit, height, goal, privacy, logout) | 🟡 theme, logout, unit, goal and height done; privacy still to come |
 
 ### Optional improvements
@@ -301,6 +301,26 @@ AuthFormState(field, saved) + fieldErrors  →  only the card that acted shows t
 - Height is the only **clearable** field, and clearing it needs its own request body; the reason is documented under [Phase 7](#implementation-phases) below.
 - Nothing is faked: every control here performs a real `PATCH` and the screen re-renders from the server's response.
 
+### Android request flow (Phase 7 — streaks)
+
+```
+Home tab
+   │  DashboardViewModel → one GET /api/dashboard
+   ▼
+WeightRepository.dashboard()   (the dashboard call already lived here)
+   │  maps DashboardStreakDto → StreakStats
+   ▼
+HomeScreen · StreakCard(dashboard.streak)
+   │  streakStatus(streak)  ← pure function, no I/O
+   ▼
+NOT_STARTED / AT_RISK / ACTIVE / ENDED  →  the number, the nudge and the record
+```
+
+- The streak rides along on the **existing** dashboard call, so the Home tab still makes exactly one request: a new section on an aggregate is cheaper than a new endpoint, and the app needed only a mapper.
+- **No new loading, empty or error state was added.** A dashboard that fails still shows the existing error banner, and a brand-new account reaches the card as real zeros — `NOT_STARTED`, not an error — because the server reports honest zeros rather than an absent section.
+- The **status decision is a pure function** (`streakStatus`), not a `when` buried in the composable, so the four states are unit-tested without a device. The card's wording lives in `streakMessageRes`, which is trivial by comparison.
+- The card sits directly under the training card so the two training-related cards read together, and it deliberately carries **no second "Log workout" button** — the nudge points at the button immediately above it rather than offering a duplicate action.
+
 ---
 
 ## Repository structure
@@ -372,7 +392,7 @@ reprise/
     │   ├── controllers/                   # auth, users, weights, workouts, dashboard, progression,
     │   │                                  # friendship, leaderboard
     │   ├── services/                      # auth, user, weight, workout, bmi, dashboard, progression,
-    │   │                                  # friendship, leaderboard
+    │   │                                  # friendship, leaderboard, streak
     │   ├── validators/                    # common.fields, auth, user, weight, workout, progression, friendship (Zod)
     │   └── utils/                         # logger, ApiError, password, token, units, objectId
     ├── scripts/                           # read-only dev tools (inspect-db.js, serve-db.js)
@@ -384,7 +404,8 @@ reprise/
         ├── workouts.test.js
         ├── progression.test.js
         ├── friends.test.js
-        └── leaderboard.test.js
+        ├── leaderboard.test.js
+        └── streaks.test.js
 ```
 
 ---
@@ -646,7 +667,7 @@ PATCH /api/weights/:id  { weight?, unit?, measuredAt?, note? }
 DELETE /api/weights/:id
                      -> 204 (no body)
 GET   /api/dashboard
-                     -> 200 { weight:{...}, workouts:{...}, bmi, bmiUnavailableReason }
+                     -> 200 { weight:{...}, workouts:{...}, streak:{...}, bmi, bmiUnavailableReason }
 ```
 
 A weight entry looks like this on the wire:
@@ -854,7 +875,40 @@ Rules the server applies (`src/services/leaderboard.service.js` — everything h
 
 > One detail is worth recording because it is invisible until it misbehaves. `RepRiseJson` leaves `encodeDefaults` at kotlinx's default of `false`, so a property still holding its declared default is **dropped from the request body**. That is exactly how "only send what changed" works — and it also means a `null` in `UpdateProfileRequest` can never mean *clear*, because it is indistinguishable from an omitted field. Clearing a height therefore uses a separate `UpdateHeightRequest`, whose `heightCm` has **no default** and is consequently always encoded. `ProfileRequestEncodingTest` pins both behaviours, and the server test `PATCH /api/users/me clears the height with an explicit null` proves the other half.
 
-**Streaks (next).** `GET /api/dashboard` will gain a `streak` section (current and longest), following the same pattern as the sections added for weight/BMI in Phase 3 and training totals in Phase 4 — so the streak appears without the app having to be rewired.
+**Streaks (shipped).** `GET /api/dashboard` gained a `streak` section, exactly as the phases before it added `weight`, `workouts` and `bmi` — so the Home card appeared without the app needing any rewiring beyond mapping the new section.
+
+```
+GET /api/dashboard
+    -> 200 { weight:{…}, workouts:{…}, streak:{…}, bmi, bmiUnavailableReason }
+```
+
+```json
+"streak": {
+  "current": 5,          // consecutive days trained, ending today or yesterday
+  "longest": 12,         // the best run this user has ever had
+  "trainedToday": false, // false => the streak is still alive but needs today
+  "activeDays": 34       // total distinct days with at least one workout
+}
+```
+
+The rules, and the reasoning behind them:
+
+- **A streak is counted in days, not sessions.** Two workouts on one day are one active day, and a day counts if it holds at least one workout of any size. The feature rewards turning up, which is the habit a beginner needs, not volume.
+- **Days are UTC calendar days**, matching the leaderboard's Monday→Monday window, so the two features never disagree about which day a workout belongs to. `$dateToString` in UTC does the grouping inside a single aggregation, so the whole streak is computed in one round trip rather than by fetching every workout into Node.
+- **Today is not required.** A streak that ended yesterday still shows as *current* until the day is out; the card says so instead (`trainedToday: false`) rather than pretending the run is over. That distinction is what makes a nudge honest — nagging somebody whose streak is genuinely broken is a dark pattern, and being wrong the other way ("your streak is over") is simply a lie.
+- **`longest` outlives the streak.** Breaking a run does not erase the record, so there is always something to beat.
+- **The arithmetic is a pure function** (`currentStreak`, `longestStreak`, `utcDayNumber`) exported from `streak.service.js`, which is why it can be unit-tested without a database — the aggregation that feeds it is tested end to end against real documents.
+
+The app turns that payload into one of four states via another pure function, `streakStatus`:
+
+| `current` | `trainedToday` | State | What the card says |
+|---|---|---|---|
+| `0`, never trained | — | `NOT_STARTED` | invite to log the first workout |
+| `0`, but has trained | — | `ENDED` | the run is over; start a new one |
+| `> 0` | `false` | `AT_RISK` | train today to keep it alive |
+| `> 0` | `true` | `ACTIVE` | done for today; come back tomorrow |
+
+> `StreakStatusTest` pins all four, including the two that are easy to get wrong: never having trained is *not* a broken streak, and a zero after training is not "at risk" — it is over.
 
 **Error shape** (every failure):
 
@@ -913,7 +967,7 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **111 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **125 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
@@ -923,6 +977,7 @@ Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra
 - **Phase 6a** — the canonical pair key is order-independent, the request/param schemas, `401` on **every** friends route, and — end to end — a request visible to both sides, exactly **one** row per pair (a repeat, and the reverse direction while pending, are both `409` and add nothing), accepting making both users friends, only the recipient being able to accept (the sender and a stranger both get `404`), an already-answered request being `409`, decline and withdraw both removing the row, neither party being able to touch a request they are not part of, either friend being able to remove the friendship (and a second removal being `404`), re-requesting a friend being `409`, and friends being listed alphabetically.
 - **Phase 6b** — the scoring rule in isolation (a day with nothing logged scores `0`, `10` per active day, and the `+5` consistency bonus landing **exactly** at three days and not before) and the week boundary (a Wednesday, a Monday and a Sunday night each resolving to the correct Monday `00:00` UTC). Then, end to end: `401` without a token, a friendless user seeing **only themselves on zero**, the board being **me and my friends and nobody else**, a second workout on the same day **not** scoring twice while both still count in `workoutCount`, last week's session not counting at all, a trainer ranking above an idle friend, and two equal scores **sharing a rank**.
 - **Phase 7 (profile)** — on top of the existing "set and validate" coverage: an explicit `heightCm: null` **clears** the stored height (asserted in the response *and* in the database) while everything else is left untouched, which is the semantic the app's height editor depends on.
+- **Phase 7 (streaks)** — the day arithmetic in isolation (`utcDayNumber` counting whole days, and `dayNumberFromKey` reading a `$dateToString` key back) and the two streak helpers over hand-built day lists: a run counts consecutive days, a **gap breaks it**, a duplicate day counts once, and `longestStreak` finds the best run anywhere in the history rather than only the run at the end. Then end to end against real documents: an empty account reporting honest zeros, a three-day run reading `current: 3`, a second session on the same day **not** extending it (`activeDays` unchanged), an older, longer run still reported as `longest` after a break, and deleting the recent days dropping `current` to `0` while `longest` **survives**.
 
 > **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries, workouts and friendships), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
@@ -934,7 +989,7 @@ cd android
 ./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
 
-The JVM suite (**117 tests**) covers the parts where a mistake is invisible until
+The JVM suite (**125 tests**) covers the parts where a mistake is invisible until
 runtime:
 
 - **`ApiCallTest`** — every shape the API can answer with: a successful response,
@@ -952,7 +1007,14 @@ runtime:
 - **`WeightRepositoryTest`** — drives a hand-written fake `RepRiseApi` to prove the
   DTO ⇄ domain mapping: values, unit codes, the canonical `weightKg`, the BMI
   category, a `null` change, the dashboard's training section, the delete path,
-  and that a rejection passes through with the server's message intact.
+  and that a rejection passes through with the server's message intact. It also
+  covers the dashboard's **streak** section — and that a dashboard *without* one
+  reads as never having trained (`NOT_STARTED`) rather than as a `0`-day streak
+  that ended, which is the difference between an invite and an accusation.
+- **`StreakStatusTest`** — the four states the streak card can be in, derived by a
+  pure function: never having trained is **not** a broken streak, a run is *at
+  risk* while today is still open, training today makes it active, and a current
+  streak of `0` **after** training means the run really is over.
 - **`WorkoutRepositoryTest`** — the same fake-API technique for the workout tree:
   exercises → sets, the display weight *and* the canonical `weightKg`, the derived
   summary, the `days`/`limit` query, the exercise catalogue, the request bodies the
@@ -1039,7 +1101,7 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 
 ## Professor demonstration procedure
 
-The full sequence below is the target for Phase 7. **Currently steps 1–10 are runnable, in the app itself.**
+The full sequence below is the target for Phase 7. **Currently steps 1–11 are runnable, in the app itself.**
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
 2. Register a new user in the app → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅
@@ -1051,7 +1113,8 @@ The full sequence below is the target for Phase 7. **Currently steps 1–10 are 
 8. Log a **second** session with the same exercise, then open **Progress** (Workouts → *Progress*), tap the exercise and show the **progressive-overload comparison**: the latest-vs-previous numbers, the verdict, and the rule-based suggestion. Log a lighter session and show the verdict flip to *Regressing*. ✅
 9. Register a second test account, then on the first account search its username in the **Friends** tab (*Find by username*), send a request, switch accounts, and accept it → show the `friendships` document with its `pairKey` and `status: "accepted"`, and the `uniq_friendship_pair` index. Remove the friendship to show the row disappear. ✅
 10. Open **Friends → *Weekly leaderboard*** and show the week: the Monday→Monday UTC window, each friend's rank and points, the `+5` consistency bonus appearing once someone reaches three active days, and your own row marked. Explain that the score is a **live aggregation over `workouts`** — nothing is stored. ✅
-11. Explain the architecture, REST API, schema, authentication and scoring rules.
+11. Back on **Home**, show the **Streak** card: the current run in days, the personal record, and the state it is in — *at risk* before you train today, *active* once you have. Log a workout and watch it flip. Explain that it is computed from the same `workouts` collection with one UTC-day aggregation, that two sessions in a day count once, and that `longest` survives a broken run. ✅
+12. Explain the architecture, REST API, schema, authentication and scoring rules.
 
 **Test accounts** *(already created in Atlas during Phase 2)*:
 
@@ -1077,13 +1140,13 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 | 5 | Progressive overload + unit tests | ✅ **complete & verified** (backend + Progress screen with rule-based verdicts) |
 | 6a | Friends (search, requests, friend list, removal) | ✅ **complete & verified** (backend + full Friends tab) |
 | 6b | Weekly leaderboard scored on the server | ✅ **complete & verified** (backend + a leaderboard screen reached from the Friends tab) |
-| 7 | Streaks, settings, polish, demo prep | 🟡 **in progress** — in-app profile editing (name, goal, unit, height) shipped; streaks next |
+| 7 | Streaks, settings, polish, demo prep | 🟡 **in progress** — in-app profile editing (name, goal, unit, height) and **activity streaks** shipped; the gym-reminder notification is next |
 
 ---
 
 ## Known limitations & future improvements
 
-- **Phases 1–6b complete, Phase 7 in progress** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, friends, the weekly leaderboard and in-app profile editing (name, goal, unit, height) all work end to end. Streaks are still to come.
+- **Phases 1–6b complete, Phase 7 in progress** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, friends, the weekly leaderboard, in-app profile editing (name, goal, unit, height) and activity streaks all work end to end. The gym-reminder notification is still to come.
 - The **username** and **profile image** are the only profile fields still read-only in the app: the API accepts both on `PATCH /api/users/me` (the username is normalised and uniqueness-checked, and a clash is a `409`), but there is no UI for them yet.
 - There is no **privacy** setting yet. The only privacy guarantee shipped is on the server: another user can only ever see your display name, username and image (never your email, goal, height or unit).
 - Weight entries and workouts are logged with the **current time** in the app (the common case). Back-dating is supported by the API (`measuredAt` / `workoutDate`) and documented above, but has no date picker in the UI yet.

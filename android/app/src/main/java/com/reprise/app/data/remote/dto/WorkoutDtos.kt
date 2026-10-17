@@ -139,3 +139,18 @@ data class DashboardWorkoutsDto(
     val recentVolumeKg: Double = 0.0,
     val lastWorkoutAt: String? = null,
 )
+
+/**
+ * The streak section of the dashboard.
+ *
+ * A streak is consecutive UTC calendar days with at least one workout.
+ * `trainedToday` distinguishes "rest day, streak still standing" from "already
+ * trained today", which is what lets the Home tab nudge rather than nag.
+ */
+@Serializable
+data class DashboardStreakDto(
+    val current: Int = 0,
+    val longest: Int = 0,
+    val trainedToday: Boolean = false,
+    val activeDays: Int = 0,
+)

@@ -328,7 +328,7 @@ The reminder is the one feature that makes **no HTTP request at all**: it is a
 local notification, scheduled on the phone and stored on the phone.
 
 ```
-Profile tab · ReminderCard   (switch · time · day chips)
+Profile tab · ReminderCard   (switch · time wheel · day chips)
    │
    ▼
 SettingsViewModel   setReminderEnabled / setReminderTime / toggleReminderDay
@@ -355,6 +355,8 @@ GymReminderWorker   re-reads the setting → posts the notification → re-arms
 - **`millisUntilNextReminder` is a pure function** taking the wall clock and a `TimeZone`, so "the next Monday at 18:00" is tested exactly (including the ISO-vs-`Calendar` weekday numbering, which is the classic off-by-one here) without waiting for a real alarm or touching a device. `java.time` is deliberately avoided: the app supports API 24, where it would need core-library desugaring.
 - **The worker re-reads the setting at fire time.** A job can sit queued for a day, so if the user has since turned the reminder off — or the system ran it so late that the day no longer matches — nothing is posted, and the next occurrence is scheduled anyway so the reminder is never silently lost.
 - **The day chips cannot all be turned off.** `toggleReminderDay` refuses to remove the last one, because a reminder with no days could never fire and would leave the user with a switch that does nothing.
+- **The time is picked on a wheel, not typed.** Two scrollable columns snap to the middle row, so there is no format to get wrong and no keyboard over the card. The wheel is a `LazyColumn` with `SnapPosition.Center` and a padding row at each end (without them `00` and `59` could not be centred), and the chosen value is read from the **layout** rather than from the scroll offset — asking the layout which row's midpoint is nearest the viewport's is right at the padded ends where offset arithmetic is not. The dialog only commits on **Set**, so scrolling past a value does not save it.
+- **A corrupt preferences file degrades instead of crashing.** DataStore's `ReplaceFileCorruptionHandler` swaps an unreadable file for empty preferences, so a damaged file means "theme follows the system, reminder off" rather than an app that cannot start.
 - **`POST_NOTIFICATIONS` is requested only when the switch is turned on**, and the card says so plainly if Android is blocking notifications, rather than showing an "on" switch for a notification that will never appear.
 
 ---
@@ -1030,7 +1032,7 @@ cd android
 ./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
 
-The JVM suite (**151 tests**) covers the parts where a mistake is invisible until
+The JVM suite (**149 tests**) covers the parts where a mistake is invisible until
 runtime:
 
 - **`ApiCallTest`** — every shape the API can answer with: a successful response,
@@ -1065,12 +1067,11 @@ runtime:
   phone's clock in a non-UTC zone. It also pins the ISO-vs-`Calendar` weekday
   translation in both directions, and that the **last** chosen day cannot be
   un-chosen.
-- **`ReminderTimeDraftTest`** — the reminder time box's parser: "18:30", the
-  boundaries of the day, a single-digit hour or minute, and surrounding
-  whitespace are accepted; an empty box is blank rather than wrong; and "25:00",
-  "18:60", "18", "18:30:00" and "evening" are **rejected rather than clamped**,
-  because silently turning "18:60" into 19:00 would set a reminder the user never
-  asked for.
+- **`ReminderWheelTest`** — the centring arithmetic behind the reminder's time
+  wheel: the first value (`00`) and the last ones (`23`, `59`) can all reach the
+  middle row, a value in between reads back unchanged, a flick past the halfway
+  point reads whichever row is nearer, and an un-laid-out wheel (or a middle row
+  that is still padding) reports **nothing** rather than guessing a number.
 - **`WorkoutRepositoryTest`** — the same fake-API technique for the workout tree:
   exercises → sets, the display weight *and* the canonical `weightKg`, the derived
   summary, the `days`/`limit` query, the exercise catalogue, the request bodies the
@@ -1170,7 +1171,7 @@ The full sequence below is the target for Phase 7. **Currently steps 1–12 are 
 9. Register a second test account, then on the first account search its username in the **Friends** tab (*Find by username*), send a request, switch accounts, and accept it → show the `friendships` document with its `pairKey` and `status: "accepted"`, and the `uniq_friendship_pair` index. Remove the friendship to show the row disappear. ✅
 10. Open **Friends → *Weekly leaderboard*** and show the week: the Monday→Monday UTC window, each friend's rank and points, the `+5` consistency bonus appearing once someone reaches three active days, and your own row marked. Explain that the score is a **live aggregation over `workouts`** — nothing is stored. ✅
 11. Back on **Home**, show the **Streak** card: the current run in days, the personal record, and the state it is in — *at risk* before you train today, *active* once you have. Log a workout and watch it flip. Explain that it is computed from the same `workouts` collection with one UTC-day aggregation, that two sessions in a day count once, and that `longest` survives a broken run. ✅
-12. In **Profile**, turn on the **Gym reminder**, set a time and pick the days, and accept the notification permission. Explain that this one is deliberately **local** — it is stored in DataStore on the phone, not on the server, so it needs no network and there is no endpoint for it — and that it is scheduled with WorkManager as a one-shot job that re-arms itself for the next occurrence, so it cannot drift the way a fixed daily repeat would.
+12. In **Profile**, turn on the **Gym reminder**, **scroll the wheels** to a time a couple of minutes away and pick the days, and accept the notification permission. Explain that this one is deliberately **local** — it is stored in DataStore on the phone, not on the server, so it needs no network and there is no endpoint for it — and that it is scheduled with WorkManager as a one-shot job that re-arms itself for the next occurrence, so it cannot drift the way a fixed daily repeat would.
 13. Explain the architecture, REST API, schema, authentication and scoring rules.
 
 **Test accounts** *(already created in Atlas during Phase 2)*:
@@ -1205,7 +1206,8 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 
 - **Phases 1–6b complete, Phase 7 in progress** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, friends, the weekly leaderboard, in-app profile editing (name, goal, unit, height), activity streaks and the gym-reminder notification all work end to end.
 - The **gym reminder is stored on the phone, not the account**, so it does not follow the user to a second device, and it is scheduled with WorkManager rather than an exact alarm — which means Android may deliver it a few minutes late (or, if the phone is in deep doze, later than that). That is a deliberate trade for needing no `SCHEDULE_EXACT_ALARM` permission and for surviving reboots for free; a reminder is not an alarm clock. The reminder also depends on the app not being **force-stopped**: a force-stop cancels pending work on many devices, so the app re-arms the job on every launch. The time is read on the phone's own clock, so travel changes when it fires.
-- The reminder's **time box is typed, not a picker**: it accepts "HH:mm" (a bare "8:30" is normalised to 08:30) and rejects anything that is not a real clock time. A native time picker would be friendlier and is the obvious next step.
+- The reminder's **time is set on a two-wheel picker**, the way an alarm clock's is — hours and minutes scroll and snap to the middle row, so nothing has to be typed and no invalid time can be entered. Because the wheel only reports whichever row is centred, it is also the one part of the reminder the JVM tests can only cover through its arithmetic (`ReminderWheelTest`); the scrolling itself needs a device.
+- **Preferences are replaced, not repaired, if the DataStore file is corrupted.** A `ReplaceFileCorruptionHandler` swaps a file that cannot be read for empty preferences, so the app degrades to "theme follows the system, reminder off" instead of crashing on launch. That is the recoverable failure, but it does silently lose the settings, so it is a safety net rather than a fix.
 - The **username** and **profile image** are the only profile fields still read-only in the app: the API accepts both on `PATCH /api/users/me` (the username is normalised and uniqueness-checked, and a clash is a `409`), but there is no UI for them yet.
 - There is no **privacy** setting yet. The only privacy guarantee shipped is on the server: another user can only ever see your display name, username and image (never your email, goal, height or unit).
 - Weight entries and workouts are logged with the **current time** in the app (the common case). Back-dating is supported by the API (`measuredAt` / `workoutDate`) and documented above, but has no date picker in the UI yet.

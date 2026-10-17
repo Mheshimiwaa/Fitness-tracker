@@ -4,26 +4,36 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.snapping.SnapPosition
+import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -32,9 +42,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.reprise.app.R
 import com.reprise.app.components.RepRiseCard
@@ -43,6 +54,8 @@ import com.reprise.app.domain.model.ReminderDay
 import com.reprise.app.domain.model.ReminderTime
 import com.reprise.app.notifications.GymReminderNotifications
 import com.reprise.app.ui.theme.RepRiseTheme
+import java.util.Locale
+import kotlin.math.abs
 
 /**
  * The gym reminder editor: a switch, a time, and the days it fires on.
@@ -52,9 +65,14 @@ import com.reprise.app.ui.theme.RepRiseTheme
  * device rather than on the server (see [GymReminder]) — it is about this
  * phone's notifications, like the theme, and it keeps working with no network.
  *
+ * The TIME IS PICKED ON A WHEEL, the way an alarm clock's is: two columns that
+ * scroll and snap to the middle row. Nothing can be mistyped, so there is no
+ * "that is not a time" state to explain, and no keyboard ever covers the card.
+ *
  * The card lives in its own file rather than inside ProfileScreen.kt because it
- * is the one card with real local state of its own (a permission request and a
- * text draft), and because that keeps the profile screen readable.
+ * is the one card with real local state of its own (a permission request and
+ * whether the wheel is open), and because that keeps the profile screen
+ * readable.
  */
 @Composable
 internal fun ReminderCard(
@@ -81,16 +99,9 @@ internal fun ReminderCard(
         notificationsAllowed = granted || GymReminderNotifications.areEnabled(context)
     }
 
-    // Re-keyed on the saved time so that saving normalises what is displayed
-    // ("8:30" becomes "08:30") without rewriting the box on every keystroke,
-    // which would move the cursor while the user types.
-    var draft by rememberSaveable(reminder.time) {
-        mutableStateOf(reminder.time.toString())
-    }
-
-    val parsed = parseReminderTimeDraft(draft)
-    val isInvalid = parsed is ReminderTimeDraft.Invalid
-    val canSave = parsed is ReminderTimeDraft.Value && parsed.time != reminder.time
+    // Survives rotation, so turning the phone with the wheel open does not
+    // silently close it.
+    var choosingTime by rememberSaveable { mutableStateOf(false) }
 
     RepRiseCard(modifier = modifier) {
         Row(
@@ -160,29 +171,22 @@ internal fun ReminderCard(
         )
         Spacer(modifier = Modifier.height(8.dp))
 
-        OutlinedTextField(
-            value = draft,
-            onValueChange = { draft = it },
+        // The time reads as the setting itself (large, like an alarm's), with
+        // one button that opens the wheel. Nothing here is typed.
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.profile_reminder_time_field)) },
-            singleLine = true,
-            isError = isInvalid,
-            supportingText = isInvalid?.let {
-                { Text(stringResource(R.string.profile_reminder_time_invalid)) }
-            },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Number,
-                imeAction = ImeAction.Done,
-            ),
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = { (parsed as? ReminderTimeDraft.Value)?.let { onTimeChange(it.time) } },
-            modifier = Modifier.fillMaxWidth(),
-            enabled = canSave,
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(text = stringResource(R.string.profile_reminder_save_time))
+            Text(
+                text = reminder.time.toString(),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            OutlinedButton(onClick = { choosingTime = true }) {
+                Text(text = stringResource(R.string.profile_reminder_change_time))
+            }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -216,9 +220,22 @@ internal fun ReminderCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+
+    if (choosingTime) {
+        ReminderTimeDialog(
+            time = reminder.time,
+            onDismiss = { choosingTime = false },
+            onConfirm = { picked ->
+                choosingTime = false
+                // Setting the same time again is a no-op, so nothing is written
+                // and no job is re-armed when the user just taps Set.
+                if (picked != reminder.time) onTimeChange(picked)
+            },
+        )
+    }
 }
 
-/** "Reminds you on Mon, Wed and Fri at 18:00." — built from the current setting. */
+/** "Reminds you on Mon, Wed, Fri at 18:00." — built from the current setting. */
 @Composable
 private fun reminderSummary(reminder: GymReminder): String {
     // `map` is inline, so stringResource may be called inside it; joinToString is
@@ -241,45 +258,202 @@ private fun reminderSummary(reminder: GymReminder): String {
 }
 
 /**
- * What a time box can contain.
+ * The two-wheel time picker, on top of the card.
  *
- * A plain function rather than logic inside the composable, for the same reason
- * `parseHeightDraft` is: it is the only place that decides whether what the user
- * typed is a time or a mistake, so it can be unit-tested without a UI.
+ * The wheels run on a DRAFT that is only handed back when the user confirms, so
+ * scrolling past a value does not set it — the same reason an alarm clock asks
+ * you to press Done. Dismissing the dialog therefore changes nothing.
  */
-internal sealed interface ReminderTimeDraft {
-    /** Nothing typed. */
-    data object Blank : ReminderTimeDraft
+@Composable
+private fun ReminderTimeDialog(
+    time: ReminderTime,
+    onDismiss: () -> Unit,
+    onConfirm: (ReminderTime) -> Unit,
+) {
+    // What the wheels are sitting on, seeded from the saved time so the dialog
+    // opens where the user left it.
+    var hour by remember { mutableIntStateOf(time.hour) }
+    var minute by remember { mutableIntStateOf(time.minute) }
 
-    /** A usable time of day. */
-    data class Value(val time: ReminderTime) : ReminderTimeDraft
-
-    /** Not "HH:mm", or out of range. */
-    data object Invalid : ReminderTimeDraft
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.profile_reminder_picker_title)) },
+        text = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                WheelColumn(
+                    values = 0..23,
+                    initialValue = time.hour,
+                    label = stringResource(R.string.profile_reminder_hour),
+                    onCenteredValueChange = { hour = it },
+                )
+                Text(
+                    text = ":",
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                WheelColumn(
+                    values = 0..59,
+                    initialValue = time.minute,
+                    label = stringResource(R.string.profile_reminder_minute),
+                    onCenteredValueChange = { minute = it },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(ReminderTime(hour = hour, minute = minute)) }) {
+                Text(text = stringResource(R.string.profile_reminder_set))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.profile_reminder_cancel))
+            }
+        },
+    )
 }
 
+/** How tall one row of a wheel is, and how many rows are visible at once. */
+private val WheelRowHeight: Dp = 40.dp
+private const val WheelVisibleRows = 5
+
 /**
- * Read the reminder time box.
+ * Where one visible row of a wheel sits on screen, in pixels.
  *
- * The hour and minute may each be one or two digits ("8:30" is accepted and
- * normalised to 08:30 when saved), but both parts must be present and inside a
- * real clock — "25:00", "18:60" and "18" are all rejected rather than being
- * silently clamped into something the user did not ask for.
+ * A local stand-in for the layout type so the centring arithmetic can be
+ * exercised by a plain unit test, with no device and no Compose UI involved.
  */
-internal fun parseReminderTimeDraft(input: String): ReminderTimeDraft {
-    val trimmed = input.trim()
-    if (trimmed.isEmpty()) return ReminderTimeDraft.Blank
+internal data class WheelRowBounds(
+    /** Position in the wheel's lazy list, INCLUDING the padding rows. */
+    val index: Int,
+    /** Distance of the row's top from the top of the visible area. */
+    val offset: Int,
+    /** Height of the row. */
+    val size: Int,
+)
 
-    val parts = trimmed.split(":")
-    if (parts.size != 2) return ReminderTimeDraft.Invalid
+/**
+ * Which value a wheel is showing in its middle row.
+ *
+ * The value nearest the viewport's midpoint wins, and the leading padding rows
+ * are subtracted to turn a list position back into a value ("row 5" is the
+ * third value when two rows are padding). Returns null when the list has not
+ * been laid out yet, or when the winner is padding rather than a value — both
+ * mean "no value to report yet" rather than a particular number.
+ */
+internal fun centeredWheelValue(
+    rows: List<WheelRowBounds>,
+    viewportCentre: Int,
+    paddingRows: Int,
+    valueCount: Int,
+): Int? = rows
+    .minByOrNull { abs(it.offset + it.size / 2 - viewportCentre) }
+    ?.index
+    ?.minus(paddingRows)
+    ?.takeIf { it in 0 until valueCount }
 
-    val hour = parts[0].toIntOrNull() ?: return ReminderTimeDraft.Invalid
-    val minute = parts[1].toIntOrNull() ?: return ReminderTimeDraft.Invalid
+/**
+ * One snapping column of a wheel: a lazy list whose middle row is the chosen
+ * value.
+ *
+ * Two things make it behave like an alarm clock's wheel rather than a plain
+ * list:
+ *
+ *  1. `SnapPosition.Center` settles a flick with a value in the MIDDLE of the
+ *     column, and [WheelVisibleRows] / 2 empty rows are padded at each end so
+ *     the first and last values (00 and 59) can reach the middle too. Without
+ *     the padding a wheel would stop early at both ends and make them
+ *     unselectable.
+ *  2. The chosen value is read from the LAYOUT ([LazyListState.layoutInfo])
+ *     rather than from the scroll offset. Working out "which row is centred"
+ *     from offsets alone goes wrong at the padded ends; asking the layout which
+ *     item's midpoint is nearest the viewport's midpoint is right everywhere.
+ */
+@Composable
+private fun WheelColumn(
+    values: IntRange,
+    initialValue: Int,
+    label: String,
+    onCenteredValueChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val items = remember(values) { values.toList() }
+    val paddingRows = WheelVisibleRows / 2
 
-    if (hour !in ReminderTime.HOUR_MIN..ReminderTime.HOUR_MAX) return ReminderTimeDraft.Invalid
-    if (minute !in ReminderTime.MINUTE_MIN..ReminderTime.MINUTE_MAX) return ReminderTimeDraft.Invalid
+    // Seeded so the wheel OPENS on the saved value, already centred: a value
+    // sits in the middle row when the list is scrolled its index rows in.
+    val state: LazyListState = rememberLazyListState(initialFirstVisibleItemIndex = initialValue)
 
-    return ReminderTimeDraft.Value(ReminderTime(hour = hour, minute = minute))
+    val centeredValue by remember(state) {
+        derivedStateOf<Int?> {
+            val info = state.layoutInfo
+            centeredWheelValue(
+                rows = info.visibleItemsInfo.map {
+                    WheelRowBounds(index = it.index, offset = it.offset, size = it.size)
+                },
+                viewportCentre = (info.viewportStartOffset + info.viewportEndOffset) / 2,
+                paddingRows = paddingRows,
+                valueCount = items.size,
+            )
+        }
+    }
+
+    // Reported outwards so the dialog's Set button reads the value the wheel is
+    // sitting on. A LaunchedEffect keeps this off the composition path, so a
+    // fling past twenty values does not update state twenty times per frame.
+    LaunchedEffect(centeredValue) {
+        centeredValue?.let(onCenteredValueChange)
+    }
+
+    Column(modifier = modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        LazyColumn(
+            state = state,
+            modifier = Modifier
+                .height(WheelRowHeight * WheelVisibleRows)
+                .width(72.dp),
+            flingBehavior = rememberSnapFlingBehavior(state, snapPosition = SnapPosition.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            items(count = paddingRows) { Spacer(modifier = Modifier.height(WheelRowHeight)) }
+
+            items(count = items.size) { index ->
+                val value = items[index]
+                val centered = value == centeredValue
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(WheelRowHeight)
+                        .semantics { contentDescription = "$label $value" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = String.format(Locale.ROOT, "%02d", value),
+                        style = if (centered) {
+                            MaterialTheme.typography.headlineSmall
+                        } else {
+                            MaterialTheme.typography.bodyLarge
+                        },
+                        color = if (centered) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+
+            items(count = paddingRows) { Spacer(modifier = Modifier.height(WheelRowHeight)) }
+        }
+    }
 }
 
 @Preview(showBackground = true)
@@ -308,6 +482,18 @@ private fun ReminderCardOffPreview() {
             onEnabledChange = {},
             onTimeChange = {},
             onToggleDay = {},
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ReminderTimeDialogPreview() {
+    RepRiseTheme {
+        ReminderTimeDialog(
+            time = ReminderTime(hour = 18, minute = 30),
+            onDismiss = {},
+            onConfirm = {},
         )
     }
 }

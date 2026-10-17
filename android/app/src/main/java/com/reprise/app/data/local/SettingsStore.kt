@@ -2,9 +2,11 @@ package com.reprise.app.data.local
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -21,9 +23,17 @@ import kotlinx.coroutines.flow.map
  * DataStore is the modern replacement for SharedPreferences: it is asynchronous
  * (so it never blocks the UI thread) and it exposes values as a [Flow], which
  * Compose can collect and automatically recompose on.
+ *
+ * The corruption handler is the difference between "the preferences are lost"
+ * and "the app will not start". DataStore throws a `CorruptionException` when
+ * the file on disk cannot be read, and an uncaught one crashes the app on
+ * launch — before any screen can explain anything. Replacing the file with empty
+ * preferences degrades to the defaults instead (theme follows the system, the
+ * reminder is off), which is the recoverable failure of the two.
  */
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "reprise_settings"
+    name = "reprise_settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
 )
 
 /**

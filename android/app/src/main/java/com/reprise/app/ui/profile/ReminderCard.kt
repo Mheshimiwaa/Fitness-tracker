@@ -1,6 +1,9 @@
 package com.reprise.app.ui.profile
 
 import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -47,12 +50,15 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.reprise.app.R
 import com.reprise.app.components.RepRiseCard
 import com.reprise.app.domain.model.GymReminder
 import com.reprise.app.domain.model.ReminderDay
+import com.reprise.app.domain.model.ReminderSound
 import com.reprise.app.domain.model.ReminderTime
 import com.reprise.app.notifications.GymReminderNotifications
+import com.reprise.app.ui.theme.ReminderSoundImport
 import com.reprise.app.ui.theme.RepRiseTheme
 import java.util.Locale
 import kotlin.math.abs
@@ -77,9 +83,12 @@ import kotlin.math.abs
 @Composable
 internal fun ReminderCard(
     reminder: GymReminder,
+    soundImport: ReminderSoundImport,
     onEnabledChange: (Boolean) -> Unit,
     onTimeChange: (ReminderTime) -> Unit,
     onToggleDay: (ReminderDay) -> Unit,
+    onSoundChange: (ReminderSound) -> Unit,
+    onImportSound: (Uri) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -99,9 +108,37 @@ internal fun ReminderCard(
         notificationsAllowed = granted || GymReminderNotifications.areEnabled(context)
     }
 
+    // Reads the audio file the user picks. `OpenDocument` (rather than
+    // GetContent) also covers sounds that live in cloud storage, and gives a
+    // long-lived read grant, which is what a document picked now and copied a
+    // moment later needs.
+    val soundPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { picked ->
+        picked?.let(onImportSound)
+    }
+
+    // Only needed on Android 9 and older, where writing into the phone's shared
+    // sound library still requires storage access. Asking at the moment the user
+    // reaches for a sound keeps it out of the app's startup.
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) soundPicker.launch(arrayOf(AUDIO_MIME_TYPE))
+    }
+
     // Survives rotation, so turning the phone with the wheel open does not
     // silently close it.
     var choosingTime by rememberSaveable { mutableStateOf(false) }
+    var choosingSound by rememberSaveable { mutableStateOf(false) }
+
+    val chooseSound: () -> Unit = {
+        if (needsStoragePermission(context)) {
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            soundPicker.launch(arrayOf(AUDIO_MIME_TYPE))
+        }
+    }
 
     RepRiseCard(modifier = modifier) {
         Row(
@@ -213,6 +250,57 @@ internal fun ReminderCard(
             }
         }
 
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = stringResource(R.string.profile_reminder_sound),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = stringResource(R.string.profile_reminder_sound_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = soundLabel(reminder.sound),
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            OutlinedButton(onClick = { choosingSound = true }) {
+                Text(text = stringResource(R.string.profile_reminder_change_sound))
+            }
+        }
+
+        when (soundImport) {
+            ReminderSoundImport.Idle -> Unit
+
+            ReminderSoundImport.Working -> {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.profile_reminder_sound_importing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            is ReminderSoundImport.Failed -> {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = stringResource(soundImport.messageRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+        }
+
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = reminderSummary(reminder),
@@ -233,7 +321,110 @@ internal fun ReminderCard(
             },
         )
     }
+
+    if (choosingSound) {
+        ReminderSoundDialog(
+            onDismiss = { choosingSound = false },
+            onChooseFile = {
+                choosingSound = false
+                chooseSound()
+            },
+            onUseDefault = {
+                choosingSound = false
+                onSoundChange(ReminderSound.SystemDefault)
+            },
+            onUseSilent = {
+                choosingSound = false
+                onSoundChange(ReminderSound.Silent)
+            },
+        )
+    }
 }
+
+/** What the reminder currently sounds like, in the user's terms. */
+@Composable
+private fun soundLabel(sound: ReminderSound): String = when (sound) {
+    ReminderSound.SystemDefault -> stringResource(R.string.profile_reminder_sound_default)
+    ReminderSound.Silent -> stringResource(R.string.profile_reminder_sound_silent)
+
+    // The imported file's own name is the most useful label, but storage may
+    // predate the name being kept, hence the fallback.
+    is ReminderSound.Clip -> sound.name.ifBlank {
+        stringResource(R.string.profile_reminder_sound_custom)
+    }
+}
+
+/**
+ * The three ways to choose a sound, on top of the card.
+ *
+ * Choosing a FILE has to go through Android's document picker, because that is
+ * how apps are allowed to read one. The other two choices are Android's own and
+ * are offered here directly, since a file picker has no way to express "no
+ * sound" or "whatever the phone uses".
+ */
+@Composable
+private fun ReminderSoundDialog(
+    onDismiss: () -> Unit,
+    onChooseFile: () -> Unit,
+    onUseDefault: () -> Unit,
+    onUseSilent: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.profile_reminder_sound_picker_title)) },
+        text = {
+            // A Column (not a Row) so the three choices read as a list, each with
+            // room for its full sentence.
+            Column {
+                SoundOption(
+                    label = stringResource(R.string.profile_reminder_sound_choose),
+                    onClick = onChooseFile,
+                )
+                SoundOption(
+                    label = stringResource(R.string.profile_reminder_sound_use_default),
+                    onClick = onUseDefault,
+                )
+                SoundOption(
+                    label = stringResource(R.string.profile_reminder_sound_use_silent),
+                    onClick = onUseSilent,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.profile_reminder_cancel))
+            }
+        },
+    )
+}
+
+/** One full-width, left-aligned choice inside [ReminderSoundDialog]. */
+@Composable
+private fun SoundOption(label: String, onClick: () -> Unit) {
+    TextButton(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(text = label, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+/** What a document picker is asked for. */
+private const val AUDIO_MIME_TYPE = "audio/*"
+
+/**
+ * Whether importing a sound needs Android's storage permission first.
+ *
+ * Only on Android 9 and older: from Android 10 the sound library can be written
+ * without it. On the versions that need it, the manifest asks for it but does not
+ * have it, so the user is prompted on the way in to picking a sound.
+ */
+private fun needsStoragePermission(context: Context): Boolean =
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        ) != PackageManager.PERMISSION_GRANTED
 
 /** "Reminds you on Mon, Wed, Fri at 18:00." — built from the current setting. */
 @Composable
@@ -465,10 +656,14 @@ private fun ReminderCardPreview() {
                 enabled = true,
                 time = ReminderTime(hour = 18, minute = 30),
                 days = setOf(ReminderDay.MONDAY, ReminderDay.WEDNESDAY, ReminderDay.FRIDAY),
+                sound = ReminderSound.Clip(uri = "content://media/1", name = "boxing_bell.mp3"),
             ),
+            soundImport = ReminderSoundImport.Idle,
             onEnabledChange = {},
             onTimeChange = {},
             onToggleDay = {},
+            onSoundChange = {},
+            onImportSound = {},
         )
     }
 }
@@ -479,9 +674,12 @@ private fun ReminderCardOffPreview() {
     RepRiseTheme {
         ReminderCard(
             reminder = GymReminder(),
+            soundImport = ReminderSoundImport.Idle,
             onEnabledChange = {},
             onTimeChange = {},
             onToggleDay = {},
+            onSoundChange = {},
+            onImportSound = {},
         )
     }
 }

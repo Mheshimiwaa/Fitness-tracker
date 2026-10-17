@@ -39,6 +39,7 @@ import com.reprise.app.components.ScreenContainer
 import com.reprise.app.domain.model.FitnessGoal
 import com.reprise.app.domain.model.GymReminder
 import com.reprise.app.domain.model.ReminderDay
+import com.reprise.app.domain.model.ReminderSound
 import com.reprise.app.domain.model.ReminderTime
 import com.reprise.app.domain.model.ThemeMode
 import com.reprise.app.domain.model.User
@@ -47,6 +48,7 @@ import com.reprise.app.ui.auth.AuthFormState
 import com.reprise.app.ui.auth.ProfileField
 import com.reprise.app.ui.auth.didSave
 import com.reprise.app.ui.auth.errorFor
+import com.reprise.app.ui.theme.ReminderSoundImport
 import com.reprise.app.ui.theme.RepRiseTheme
 
 /**
@@ -56,8 +58,8 @@ import com.reprise.app.ui.theme.RepRiseTheme
  * display name, training goal, preferred unit, height and profile picture — are
  * all genuinely writable (the first four via `PATCH /api/users/me`, the picture
  * via `PUT /api/users/me/photo`). Two preferences are local instead: the theme,
- * and the gym reminder, because both are about this device rather than the
- * account. See [ReminderCard] for why.
+ * and the gym reminder — including the sound it makes — because both are about
+ * this device rather than the account. See [ReminderCard] for why.
  *
  * Each card saves on its own and therefore shows its own confirmation and its
  * own errors; see [AuthFormState.field] for how one shared state serves them all.
@@ -78,6 +80,9 @@ fun ProfileScreen(
     onReminderEnabledChange: (Boolean) -> Unit,
     onReminderTimeChange: (ReminderTime) -> Unit,
     onToggleReminderDay: (ReminderDay) -> Unit,
+    soundImport: ReminderSoundImport,
+    onReminderSoundChange: (ReminderSound) -> Unit,
+    onImportReminderSound: (Uri) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -118,9 +123,12 @@ fun ProfileScreen(
 
         ReminderCard(
             reminder = reminder,
+            soundImport = soundImport,
             onEnabledChange = onReminderEnabledChange,
             onTimeChange = onReminderTimeChange,
             onToggleDay = onToggleReminderDay,
+            onSoundChange = onReminderSoundChange,
+            onImportSound = onImportReminderSound,
         )
 
         OutlinedButton(
@@ -525,6 +533,9 @@ private fun ProfileScreenPreview() {
             onReminderEnabledChange = {},
             onReminderTimeChange = {},
             onToggleReminderDay = {},
+            soundImport = ReminderSoundImport.Idle,
+            onReminderSoundChange = {},
+            onImportReminderSound = {},
             onLogout = {},
         )
     }

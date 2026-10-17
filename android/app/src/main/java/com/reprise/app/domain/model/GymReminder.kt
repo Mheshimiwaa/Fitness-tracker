@@ -93,6 +93,12 @@ data class GymReminder(
     val enabled: Boolean = false,
     val time: ReminderTime = ReminderTime.DEFAULT,
     val days: Set<ReminderDay> = ReminderDay.ALL,
+    /**
+     * What the reminder sounds like. The default is the phone's own notification
+     * tone, which is what the reminder used before it became choosable — so a
+     * reminder set up earlier keeps behaving exactly as it did.
+     */
+    val sound: ReminderSound = ReminderSound.SystemDefault,
 ) {
     /** True when this reminder should fire this many days into the week. */
     fun isEnabledOn(isoDayNumber: Int): Boolean =

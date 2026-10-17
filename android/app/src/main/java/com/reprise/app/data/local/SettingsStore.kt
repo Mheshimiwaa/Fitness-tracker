@@ -12,8 +12,12 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.reprise.app.domain.model.GymReminder
 import com.reprise.app.domain.model.ReminderDay
+import com.reprise.app.domain.model.ReminderSound
 import com.reprise.app.domain.model.ReminderTime
 import com.reprise.app.domain.model.ThemeMode
+import com.reprise.app.domain.model.parseStoredReminderSound
+import com.reprise.app.domain.model.storedName
+import com.reprise.app.domain.model.storedUri
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -47,6 +51,8 @@ class SettingsStore(private val context: Context) {
     private val reminderEnabledKey = booleanPreferencesKey("reminder_enabled")
     private val reminderTimeKey = stringPreferencesKey("reminder_time")
     private val reminderDaysKey = stringSetPreferencesKey("reminder_days")
+    private val reminderSoundUriKey = stringPreferencesKey("reminder_sound_uri")
+    private val reminderSoundNameKey = stringPreferencesKey("reminder_sound_name")
 
     /**
      * Emits the saved theme choice, defaulting to [ThemeMode.SYSTEM] for a fresh
@@ -75,6 +81,10 @@ class SettingsStore(private val context: Context) {
             enabled = preferences[reminderEnabledKey] ?: false,
             time = parseStoredTime(preferences[reminderTimeKey]),
             days = parseStoredDays(preferences[reminderDaysKey]),
+            sound = parseStoredReminderSound(
+                storedUri = preferences[reminderSoundUriKey],
+                storedName = preferences[reminderSoundNameKey],
+            ),
         )
     }
 
@@ -95,6 +105,32 @@ class SettingsStore(private val context: Context) {
             // Stored as ISO day numbers ("1".."7") so the value stays readable
             // and survives a future rename of the enum constants.
             preferences[reminderDaysKey] = days.map { it.isoNumber.toString() }.toSet()
+        }
+    }
+
+    /**
+     * Save the chosen sound.
+     *
+     * The default is REMOVED rather than written as a value, so "no choice yet"
+     * and "the phone's default" are the same stored state. Installing the app
+     * and never touching the sound setting therefore leaves no trace behind.
+     */
+    suspend fun setReminderSound(sound: ReminderSound) {
+        context.settingsDataStore.edit { preferences ->
+            val uri = sound.storedUri()
+            val name = sound.storedName()
+
+            if (uri == null) {
+                preferences.remove(reminderSoundUriKey)
+            } else {
+                preferences[reminderSoundUriKey] = uri
+            }
+
+            if (name == null) {
+                preferences.remove(reminderSoundNameKey)
+            } else {
+                preferences[reminderSoundNameKey] = name
+            }
         }
     }
 }

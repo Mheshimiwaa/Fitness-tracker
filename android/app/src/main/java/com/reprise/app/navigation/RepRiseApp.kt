@@ -30,6 +30,7 @@ fun RepRiseApp() {
     val formState by authViewModel.formState.collectAsStateWithLifecycle()
     val themeMode by settingsViewModel.themeMode.collectAsStateWithLifecycle()
     val reminder by settingsViewModel.gymReminder.collectAsStateWithLifecycle()
+    val soundImport by settingsViewModel.soundImport.collectAsStateWithLifecycle()
 
     when (val state = authState) {
         // Still validating the stored token — show a spinner, NOT the login form.
@@ -57,6 +58,9 @@ fun RepRiseApp() {
             onReminderEnabledChange = settingsViewModel::setReminderEnabled,
             onReminderTimeChange = settingsViewModel::setReminderTime,
             onToggleReminderDay = settingsViewModel::toggleReminderDay,
+            soundImport = soundImport,
+            onReminderSoundChange = settingsViewModel::setReminderSound,
+            onImportReminderSound = settingsViewModel::importReminderSound,
             onLogout = authViewModel::logout,
         )
     }

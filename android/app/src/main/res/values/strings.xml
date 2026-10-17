@@ -91,6 +91,19 @@
     <string name="profile_reminder_cancel">Cancel</string>
     <string name="profile_reminder_days">Days</string>
     <string name="profile_reminder_days_hint">Pick the days you train. At least one day is required.</string>
+    <string name="profile_reminder_sound">Sound</string>
+    <string name="profile_reminder_sound_hint">What plays when the reminder arrives.</string>
+    <string name="profile_reminder_change_sound">Change sound</string>
+    <string name="profile_reminder_sound_picker_title">Reminder sound</string>
+    <string name="profile_reminder_sound_choose">Choose a sound from this phone</string>
+    <string name="profile_reminder_sound_use_default">Use the phone\'s default sound</string>
+    <string name="profile_reminder_sound_use_silent">No sound</string>
+    <string name="profile_reminder_sound_default">Phone\'s default</string>
+    <string name="profile_reminder_sound_silent">Silent</string>
+    <string name="profile_reminder_sound_custom">Your sound</string>
+    <string name="profile_reminder_sound_importing">Adding your sound to this phone…</string>
+    <string name="profile_reminder_sound_too_large">That file is too big to use as a reminder sound (the limit is 5 MB). Pick a shorter one.</string>
+    <string name="profile_reminder_sound_unreadable">That file could not be read. It may have been moved or deleted — pick another one.</string>
     <string name="profile_reminder_summary_daily">Reminds you every day at %1$s.</string>
     <string name="profile_reminder_summary_days">Reminds you on %1$s at %2$s.</string>
 
@@ -107,6 +120,8 @@
     <string name="notification_gym_reminder_title">Time to train</string>
     <string name="notification_gym_reminder_text">Head to the gym and log today\'s workout in RepRise to keep your streak going.</string>
     <string name="notification_channel_reminder_name">Gym reminder</string>
+    <string name="notification_channel_reminder_name_silent">Gym reminder (silent)</string>
+    <string name="notification_channel_reminder_name_custom">Gym reminder (your sound)</string>
     <string name="notification_channel_reminder_description">A reminder to train on the days you chose.</string>
 
     <!-- Fitness goals -->

@@ -1,19 +1,26 @@
 package com.reprise.app.ui.theme
 
 import android.content.Context
+import android.net.Uri
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.reprise.app.R
+import com.reprise.app.data.audio.ReminderSoundImporter
 import com.reprise.app.data.local.SettingsStore
 import com.reprise.app.di.AppModule
 import com.reprise.app.domain.model.GymReminder
 import com.reprise.app.domain.model.ReminderDay
+import com.reprise.app.domain.model.ReminderSound
 import com.reprise.app.domain.model.ReminderTime
 import com.reprise.app.domain.model.ThemeMode
 import com.reprise.app.domain.model.toggleReminderDay
 import com.reprise.app.notifications.GymReminderScheduler
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -44,6 +51,16 @@ class SettingsViewModel(
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
         initialValue = ThemeMode.SYSTEM,
     )
+
+    /**
+     * Whether "add a sound" is working, and why it failed if it did.
+     *
+     * Importing is the one reminder setting that can fail for a reason the user
+     * needs to know about (the file was unreadable, or too big to be a sensible
+     * notification sound), so the card has something to show besides the choice.
+     */
+    private val _soundImport = MutableStateFlow<ReminderSoundImport>(ReminderSoundImport.Idle)
+    val soundImport: StateFlow<ReminderSoundImport> = _soundImport.asStateFlow()
 
     val gymReminder: StateFlow<GymReminder> = settingsStore.gymReminder.stateIn(
         scope = viewModelScope,
@@ -90,6 +107,49 @@ class SettingsViewModel(
     }
 
     /**
+     * Choose what the reminder sounds like.
+     *
+     * No job re-arm is needed — the sound is read when the reminder fires, not
+     * when it is scheduled — but a change of sound does mean the next reminder
+     * will be posted on a different notification channel, which the notification
+     * code works out for itself.
+     */
+    fun setReminderSound(sound: ReminderSound) {
+        _soundImport.value = ReminderSoundImport.Idle
+        viewModelScope.launch { settingsStore.setReminderSound(sound) }
+    }
+
+    /**
+     * Copy a sound the user picked into the phone's sound library, then select it.
+     *
+     * The copy is the reason this is not simply a stored preference: Android plays
+     * notification sounds, and it cannot read a file that belongs to this app, so
+     * the picked file has to be imported before it can be used at all. See
+     * [ReminderSoundImporter].
+     */
+    fun importReminderSound(source: Uri) {
+        if (_soundImport.value is ReminderSoundImport.Working) return
+
+        _soundImport.value = ReminderSoundImport.Working
+        viewModelScope.launch {
+            _soundImport.value = when (val result = ReminderSoundImporter.import(appContext, source)) {
+                is ReminderSoundImporter.Result.Imported -> {
+                    settingsStore.setReminderSound(
+                        ReminderSound.Clip(uri = result.uri, name = result.name)
+                    )
+                    ReminderSoundImport.Idle
+                }
+
+                ReminderSoundImporter.Result.TooLarge ->
+                    ReminderSoundImport.Failed(R.string.profile_reminder_sound_too_large)
+
+                ReminderSoundImporter.Result.Unreadable ->
+                    ReminderSoundImport.Failed(R.string.profile_reminder_sound_unreadable)
+            }
+        }
+    }
+
+    /**
      * Re-read the stored reminder and hand it to WorkManager.
      *
      * Reading it back (instead of passing the value the caller just wrote) means
@@ -107,4 +167,21 @@ class SettingsViewModel(
             initializer { SettingsViewModel(AppModule.settingsStore, AppModule.appContext) }
         }
     }
+}
+
+/**
+ * What the "add a sound" flow is doing, so the card can show progress and
+ * explain a failure.
+ *
+ * A failure carries a string RESOURCE rather than ready-made text, because the
+ * explanation is written for the user in their language and belongs in
+ * `strings.xml` with every other sentence the app says — not in a ViewModel.
+ */
+sealed interface ReminderSoundImport {
+    data object Idle : ReminderSoundImport
+
+    data object Working : ReminderSoundImport
+
+    /** @param messageRes why the sound could not be added. */
+    data class Failed(@param:StringRes val messageRes: Int) : ReminderSoundImport
 }

@@ -36,7 +36,7 @@ class GymReminderWorker(
             timeZone = TimeZone.getDefault(),
         )
         if (reminder.isEnabledOn(today)) {
-            GymReminderNotifications.show(applicationContext)
+            GymReminderNotifications.show(applicationContext, reminder.sound)
         }
 
         GymReminderScheduler.sync(applicationContext, reminder)

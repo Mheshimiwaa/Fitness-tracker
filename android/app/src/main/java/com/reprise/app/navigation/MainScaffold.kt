@@ -27,6 +27,7 @@ import com.reprise.app.R
 import com.reprise.app.domain.model.FitnessGoal
 import com.reprise.app.domain.model.GymReminder
 import com.reprise.app.domain.model.ReminderDay
+import com.reprise.app.domain.model.ReminderSound
 import com.reprise.app.domain.model.ReminderTime
 import com.reprise.app.domain.model.ThemeMode
 import com.reprise.app.domain.model.User
@@ -37,6 +38,7 @@ import com.reprise.app.ui.home.HomeScreen
 import com.reprise.app.ui.leaderboard.LeaderboardScreen
 import com.reprise.app.ui.profile.ProfileScreen
 import com.reprise.app.ui.progression.ProgressionScreen
+import com.reprise.app.ui.theme.ReminderSoundImport
 import com.reprise.app.ui.weights.WeightsScreen
 import com.reprise.app.ui.workouts.WorkoutEditorScreen
 import com.reprise.app.ui.workouts.WorkoutsScreen
@@ -65,6 +67,9 @@ fun MainScaffold(
     onReminderEnabledChange: (Boolean) -> Unit,
     onReminderTimeChange: (ReminderTime) -> Unit,
     onToggleReminderDay: (ReminderDay) -> Unit,
+    soundImport: ReminderSoundImport,
+    onReminderSoundChange: (ReminderSound) -> Unit,
+    onImportReminderSound: (Uri) -> Unit,
     onLogout: () -> Unit,
 ) {
     val navController = rememberNavController()
@@ -155,6 +160,9 @@ fun MainScaffold(
                     onReminderEnabledChange = onReminderEnabledChange,
                     onReminderTimeChange = onReminderTimeChange,
                     onToggleReminderDay = onToggleReminderDay,
+                    soundImport = soundImport,
+                    onReminderSoundChange = onReminderSoundChange,
+                    onImportReminderSound = onImportReminderSound,
                     onLogout = onLogout,
                 )
             }

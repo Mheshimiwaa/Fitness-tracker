@@ -13,6 +13,24 @@
     -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!--
+      Importing a reminder sound means copying the chosen file into the phone's
+      shared sound library, which is how Android lets another app's sound be
+      played by the system. From Android 10 that copy needs no permission; only
+      Android 9 and older require this one, so it is capped at API 28 and asked
+      for at the moment the user reaches for a sound.
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
+    <!--
+      The camera: NOTHING here. A profile picture is taken by the phone's camera
+      app, which writes the file through the FileProvider below. Declaring
+      android.permission.CAMERA would make Android demand that permission before
+      the camera app may even be asked, which would break the flow for no gain.
+    -->
+
     <application
         android:name=".RepRiseApplication"
         android:allowBackup="true"

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,7 +22,8 @@ import androidx.compose.ui.unit.dp
  *   - the standard 16dp horizontal screen padding,
  *   - a large title at the top,
  *   - vertical scrolling so content never gets clipped on small phones,
- *   - a consistent 16dp gap between children.
+ *   - a consistent 16dp gap between children,
+ *   - and a scrolling area that stops above the soft keyboard.
  *
  * Reusing one container keeps spacing identical across screens, which is a big
  * part of looking "polished".
@@ -36,6 +38,12 @@ fun ScreenContainer(
 ) {
     val baseModifier = modifier
         .fillMaxSize()
+        // The app draws edge-to-edge, so Android does NOT resize the window when
+        // the keyboard opens — the app is handed the keyboard's height as an
+        // inset instead. Subtracting it here shortens the scrollable area, which
+        // is what lets a focused text field scroll up above the keyboard rather
+        // than sitting behind it.
+        .imePadding()
         .padding(contentPadding)
     val scrollModifier =
         if (scrollable) baseModifier.verticalScroll(rememberScrollState()) else baseModifier

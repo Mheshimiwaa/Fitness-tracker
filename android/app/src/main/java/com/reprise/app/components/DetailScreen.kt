@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -31,6 +32,10 @@ import com.reprise.app.R
  * The bottom navigation bar is hidden on these screens (see MainScaffold), so
  * the back arrow is the way out — which is exactly how a detail screen should
  * behave.
+ *
+ * The scrolling area stops above the soft keyboard (see the `imePadding` note
+ * below), so a text field that gains focus — by tap or by the keyboard's "next"
+ * action — scrolls up into view instead of hiding behind the keyboard.
  */
 @Composable
 fun DetailScreen(
@@ -67,6 +72,11 @@ fun DetailScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                // The title row above stays pinned at the top, and this scrolling
+                // area is shortened by the keyboard's height. Without it the
+                // area would extend behind the keyboard, so nothing would scroll
+                // the focused field into view (it would already look "visible").
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),

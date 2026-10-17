@@ -1,5 +1,6 @@
 package com.reprise.app.navigation
 
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
@@ -100,7 +101,13 @@ fun MainScaffold(
             navController = navController,
             startDestination = TopLevelDestination.HOME.route,
             // Apply the Scaffold's padding so content is not hidden behind the bar.
-            modifier = Modifier.padding(innerPadding),
+            modifier = Modifier
+                .padding(innerPadding)
+                // ...and record it as consumed, so a screen's own `imePadding()`
+                // only adds the part of the keyboard the bar has not already
+                // covered. Without this a tab screen would leave a bar-high gap
+                // between its content and the keyboard.
+                .consumeWindowInsets(innerPadding),
         ) {
             composable(TopLevelDestination.HOME.route) {
                 HomeScreen(

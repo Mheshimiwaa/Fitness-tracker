@@ -43,6 +43,10 @@ android {
         debug {
             // Base URL for the backend used by debug builds (Phase 2 onward).
             // 10.0.2.2 is the Android emulator's alias for the host machine.
+            // This is the LOCAL development backend — to run against a real
+            // phone on the same Wi-Fi, put your machine's LAN address here
+            // (and add it to network_security_config.xml), or forward the port
+            // with `adb reverse tcp:4000 tcp:4000` and use 127.0.0.1.
             buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:4000/\"")
         }
         release {
@@ -51,7 +55,18 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            buildConfigField("String", "API_BASE_URL", "\"https://your-backend.example.com/\"")
+            // The DEPLOYED backend (Render — see render.yaml). A release build
+            // is the one you give to other people: it needs a URL that works
+            // from any network, and https, which is why it is not a LAN address.
+            //
+            // If the service ends up with a different name, change this ONE
+            // line and rebuild — nothing else depends on the host.
+            buildConfigField("String", "API_BASE_URL", "\"https://reprise-api.onrender.com/\"")
+            // Signed with the Debug keystore on purpose: this APK is handed to
+            // friends to sideload, not published to the Play Store, and using
+            // the same key as the debug build means it INSTALLS OVER an already
+            // installed debug build instead of colliding with it.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

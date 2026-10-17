@@ -16,5 +16,9 @@
         <domain includeSubdomains="true">10.0.2.2</domain>
         <domain includeSubdomains="true">localhost</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
+        <!-- To test a debug build against the LOCAL backend from a real phone,
+             add this machine's LAN address here, e.g.
+             <domain includeSubdomains="true">192.168.1.20</domain>
+             Release builds talk to the deployed https API and need no entry. -->
     </domain-config>
 </network-security-config>

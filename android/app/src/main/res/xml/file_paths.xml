@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Which files the app's FileProvider may expose (see AndroidManifest.xml).
+
+  Exactly one directory is listed: the `avatar/` subdirectory of the app's cache,
+  which is where a picture about to be taken is written. Everything else in the
+  app — the encrypted token store, the settings, the rest of the cache — is not
+  reachable through the provider, so a misdirected camera app cannot read it.
+
+  A `cache-path` is deliberate: a photo the user abandons is temporary by
+  nature, and Android is free to clear it when the device runs low on space.
+-->
+<paths>
+    <cache-path
+        name="camera-photos"
+        path="avatar/" />
+</paths>

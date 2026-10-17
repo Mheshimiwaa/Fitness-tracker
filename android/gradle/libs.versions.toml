@@ -36,6 +36,18 @@ securityCrypto = "1.1.0"
 # a reminder may legitimately be a few minutes late, and it must survive a
 # reboot — which WorkManager does for free, without an exact-alarm permission.
 work = "2.12.0"
+# Image loading (profile photos). Coil is the standard Compose image loader: it
+# handles fetching, caching and decoding, which is the part that is easy to get
+# subtly wrong by hand. The `network-okhttp` artifact lets it use OkHttp, the
+# HTTP client the app already ships.
+#
+# Pinned to 3.3.0 on purpose. Coil 3.5.0 and 3.6.3 are compiled with Kotlin 2.4
+# and depend on kotlin-stdlib 2.4.x, whose metadata the Kotlin compiler bundled
+# with AGP 9.4.1 (2.2.x) refuses to read — it can read up to 2.3.0. 3.3.0 is
+# built with Kotlin 2.2, so the whole build stays on ONE Kotlin version. (The
+# alternative, forcing an older stdlib in, would risk a NoSuchMethodError on a
+# device instead of a build error here.)
+coil = "3.3.0"
 
 # Testing
 junit = "4.13.2"
@@ -78,6 +90,13 @@ androidx-security-crypto = { group = "androidx.security", name = "security-crypt
 
 # --- Background work (Phase 7: the gym reminder) ----------------------------
 androidx-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
+
+# --- Images (Phase 7: profile photos) ---------------------------------------
+# `coil-compose` gives the AsyncImage composables; `coil-network-okhttp` gives
+# Coil an OkHttp-backed network layer so it reuses the HTTP stack the app
+# already carries instead of pulling in another one.
+coil-compose = { group = "io.coil-kt.coil3", name = "coil-compose", version.ref = "coil" }
+coil-network-okhttp = { group = "io.coil-kt.coil3", name = "coil-network-okhttp", version.ref = "coil" }
 
 # --- Testing ----------------------------------------------------------------
 junit = { group = "junit", name = "junit", version.ref = "junit" }

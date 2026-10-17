@@ -26,12 +26,14 @@ import com.reprise.app.data.remote.dto.WeightEntryEnvelopeDto
 import com.reprise.app.data.remote.dto.WeightHistoryDto
 import com.reprise.app.data.remote.dto.WorkoutEnvelopeDto
 import com.reprise.app.data.remote.dto.WorkoutListDto
+import okhttp3.RequestBody
 import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -72,6 +74,26 @@ interface RepRiseApi {
      */
     @PATCH("api/users/me")
     suspend fun updateHeight(@Body body: UpdateHeightRequest): Response<UserEnvelopeDto>
+
+    /**
+     * Replace the caller's profile photo.
+     *
+     * The image is the raw request body — NOT a multipart form and not JSON —
+     * with the bytes' own content type in the header, which is why this takes an
+     * OkHttp [RequestBody] instead of a DTO. The server decides what the file
+     * really is from its leading bytes; see the backend's photo service.
+     */
+    @PUT("api/users/me/photo")
+    suspend fun uploadProfilePhoto(@Body body: RequestBody): Response<UserEnvelopeDto>
+
+    /**
+     * Remove the caller's profile photo.
+     *
+     * Answers with the updated user rather than an empty 204, so every profile
+     * write updates the session the same way.
+     */
+    @DELETE("api/users/me/photo")
+    suspend fun deleteProfilePhoto(): Response<UserEnvelopeDto>
 
     // --- Weight tracking + dashboard (Phase 3) ------------------------------
 

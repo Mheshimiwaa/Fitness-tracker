@@ -33,6 +33,7 @@ import com.reprise.app.data.remote.dto.WorkoutListDto
 import com.reprise.app.domain.model.FriendRequestDirection
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -307,6 +308,12 @@ private class FakeFriendApi(
 
     override suspend fun updateHeight(body: UpdateHeightRequest): Response<UserEnvelopeDto> =
         throw NotImplementedError("updateHeight is not used by FriendRepository")
+
+    override suspend fun uploadProfilePhoto(body: RequestBody): Response<UserEnvelopeDto> =
+        throw NotImplementedError("uploadProfilePhoto is not used by FriendRepository")
+
+    override suspend fun deleteProfilePhoto(): Response<UserEnvelopeDto> =
+        throw NotImplementedError("deleteProfilePhoto is not used by FriendRepository")
 
     override suspend fun dashboard(): Response<DashboardDto> =
         throw NotImplementedError("dashboard is not used by FriendRepository")

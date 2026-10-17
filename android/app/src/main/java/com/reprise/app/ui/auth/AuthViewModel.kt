@@ -1,10 +1,13 @@
 package com.reprise.app.ui.auth
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.reprise.app.data.image.AvatarImage
 import com.reprise.app.data.remote.ApiResult
 import com.reprise.app.data.repository.AuthRepository
 import com.reprise.app.di.AppModule
@@ -53,6 +56,13 @@ object ProfileField {
     const val FITNESS_GOAL = "fitnessGoal"
     const val WEIGHT_UNIT = "weightUnit"
     const val HEIGHT_CM = "heightCm"
+
+    /**
+     * The profile photo. Not a field anyone types into — it is listed here so the
+     * photo card gets its own "saved" confirmation and its own errors, exactly
+     * like the typed fields, instead of every card reacting at once.
+     */
+    const val PROFILE_IMAGE = "profileImageUrl"
 }
 
 /**
@@ -76,7 +86,15 @@ fun AuthFormState.didSave(field: String): Boolean = saved && this.field == field
  * [authState] is not owned here — it comes straight from the repository, so
  * there is exactly one source of truth about who is signed in.
  */
-class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
+class AuthViewModel(
+    private val authRepository: AuthRepository,
+    /**
+     * The application context, needed to read a picture the user picked. It is
+     * the APPLICATION context, so holding it for the ViewModel's life cannot
+     * leak an Activity.
+     */
+    private val appContext: Context,
+) : ViewModel() {
 
     /** Who is signed in. Drives the navigation between the auth and main graphs. */
     val authState: StateFlow<AuthState> = authRepository.authState
@@ -138,11 +156,37 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
         }
     }
 
+    /**
+     * Replace the profile photo with the picture at [uri] — something the user
+     * just took with the camera, or chose from the gallery.
+     *
+     * The picture is re-encoded on a background thread first (see [AvatarImage]):
+     * what gets uploaded is a small JPEG, whatever was picked. A picture that
+     * cannot be read at all fails like any other request, so the card has one
+     * error message to show rather than two mechanisms.
+     */
+    fun uploadPhoto(uri: Uri) {
+        submit(field = ProfileField.PROFILE_IMAGE) {
+            val jpeg = AvatarImage.toJpeg(appContext, uri)
+                ?: return@submit ApiResult.Failure(
+                    message = "That picture could not be read. Try another one."
+                )
+
+            authRepository.uploadProfilePhoto(jpeg)
+        }
+    }
+
+    /** Remove the profile photo. The rest of the profile is untouched. */
+    fun removePhoto() {
+        submit(field = ProfileField.PROFILE_IMAGE) {
+            authRepository.removeProfilePhoto()
+        }
+    }
+
     fun logout() {
         _formState.value = AuthFormState()
         authRepository.logout()
     }
-
     /**
      * Clear stale feedback as soon as the user edits a field, so an old error
      * does not linger next to freshly typed input.
@@ -183,7 +227,7 @@ class AuthViewModel(private val authRepository: AuthRepository) : ViewModel() {
          * app-wide [AppModule] container.
          */
         val Factory: ViewModelProvider.Factory = viewModelFactory {
-            initializer { AuthViewModel(AppModule.authRepository) }
+            initializer { AuthViewModel(AppModule.authRepository, AppModule.appContext) }
         }
     }
 }

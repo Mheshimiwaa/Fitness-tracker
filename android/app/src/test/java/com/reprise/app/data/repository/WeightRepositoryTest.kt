@@ -42,6 +42,7 @@ import com.reprise.app.domain.model.WeightUnit
 import com.reprise.app.domain.model.streakStatus
 import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -405,6 +406,12 @@ private class FakeApi(
 
     override suspend fun updateHeight(body: UpdateHeightRequest): Response<UserEnvelopeDto> =
         throw NotImplementedError("updateHeight is not used by WeightRepository")
+
+    override suspend fun uploadProfilePhoto(body: RequestBody): Response<UserEnvelopeDto> =
+        throw NotImplementedError("uploadProfilePhoto is not used by WeightRepository")
+
+    override suspend fun deleteProfilePhoto(): Response<UserEnvelopeDto> =
+        throw NotImplementedError("deleteProfilePhoto is not used by WeightRepository")
 
     // --- Workouts (handled by WorkoutRepositoryTest) -------------------------
 

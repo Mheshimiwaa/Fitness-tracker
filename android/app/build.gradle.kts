@@ -104,6 +104,10 @@ dependencies {
     // --- Background work: the daily gym reminder is a WorkManager job ---
     implementation(libs.androidx.work.runtime.ktx)
 
+    // --- Images: profile photos are fetched, cached and decoded by Coil ---
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+
     // --- Debug-only tooling (Layout Inspector / @Preview) ---
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

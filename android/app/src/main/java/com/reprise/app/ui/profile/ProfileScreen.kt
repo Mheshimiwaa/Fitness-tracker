@@ -1,5 +1,6 @@
 package com.reprise.app.ui.profile
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -52,11 +52,12 @@ import com.reprise.app.ui.theme.RepRiseTheme
 /**
  * The signed-in user's profile.
  *
- * Every value shown here comes from the API, and the four personal fields —
- * display name, training goal, preferred unit and height — are all genuinely
- * writable via `PATCH /api/users/me`. Two preferences are local instead: the
- * theme, and the gym reminder, because both are about this device rather than
- * the account. See [ReminderCard] for why.
+ * Every value shown here comes from the API, and the five personal things —
+ * display name, training goal, preferred unit, height and profile picture — are
+ * all genuinely writable (the first four via `PATCH /api/users/me`, the picture
+ * via `PUT /api/users/me/photo`). Two preferences are local instead: the theme,
+ * and the gym reminder, because both are about this device rather than the
+ * account. See [ReminderCard] for why.
  *
  * Each card saves on its own and therefore shows its own confirmation and its
  * own errors; see [AuthFormState.field] for how one shared state serves them all.
@@ -71,6 +72,8 @@ fun ProfileScreen(
     onChangeFitnessGoal: (FitnessGoal) -> Unit,
     onChangeWeightUnit: (WeightUnit) -> Unit,
     onSaveHeight: (Int?) -> Unit,
+    onPhotoPicked: (Uri) -> Unit,
+    onRemovePhoto: () -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
     onReminderEnabledChange: (Boolean) -> Unit,
     onReminderTimeChange: (ReminderTime) -> Unit,
@@ -79,7 +82,12 @@ fun ProfileScreen(
     modifier: Modifier = Modifier,
 ) {
     ScreenContainer(title = stringResource(R.string.title_profile), modifier = modifier) {
-        IdentityCard(user = user)
+        ProfilePhotoCard(
+            user = user,
+            formState = formState,
+            onPhotoPicked = onPhotoPicked,
+            onRemovePhoto = onRemovePhoto,
+        )
 
         AccountDetailsCard(user = user)
 
@@ -122,36 +130,6 @@ fun ProfileScreen(
             Icon(imageVector = Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null)
             Spacer(modifier = Modifier.size(8.dp))
             Text(text = stringResource(R.string.action_log_out))
-        }
-    }
-}
-
-/** Avatar placeholder plus the name and @handle. */
-@Composable
-private fun IdentityCard(user: User) {
-    RepRiseCard {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Icon(
-                imageVector = Icons.Filled.AccountCircle,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(56.dp),
-            )
-            Column {
-                Text(
-                    text = user.displayName,
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Text(
-                    text = "@${user.username}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
     }
 }
@@ -429,9 +407,14 @@ private fun FieldError(message: String?) {
     )
 }
 
-/** The confirmation shown by the card whose field was just saved. */
+/**
+ * The confirmation shown by the card whose field was just saved.
+ *
+ * Shared with [ProfilePhotoCard], which reports its save the same way the typed
+ * fields do.
+ */
 @Composable
-private fun SavedNotice() {
+internal fun SavedNotice() {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -536,6 +519,8 @@ private fun ProfileScreenPreview() {
             onChangeFitnessGoal = {},
             onChangeWeightUnit = {},
             onSaveHeight = {},
+            onPhotoPicked = {},
+            onRemovePhoto = {},
             onThemeModeChange = {},
             onReminderEnabledChange = {},
             onReminderTimeChange = {},

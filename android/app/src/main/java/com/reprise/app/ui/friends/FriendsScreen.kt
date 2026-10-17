@@ -511,7 +511,11 @@ private fun UserRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        UserAvatar(displayName = user.displayName, username = user.username)
+        UserAvatar(
+            displayName = user.displayName,
+            username = user.username,
+            profileImageUrl = user.profileImageUrl,
+        )
 
         Column(modifier = Modifier.weight(1f)) {
             Text(

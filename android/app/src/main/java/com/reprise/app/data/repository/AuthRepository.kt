@@ -1,6 +1,7 @@
 package com.reprise.app.data.repository
 
 import com.reprise.app.data.local.TokenStore
+import com.reprise.app.data.image.AvatarImage
 import com.reprise.app.data.remote.ApiResult
 import com.reprise.app.data.remote.RepRiseApi
 import com.reprise.app.data.remote.apiCall
@@ -116,6 +117,30 @@ class AuthRepository(
         val request = UpdateHeightRequest(heightCm = heightCm)
 
         return when (val result = apiCall { api.updateHeight(request) }) {
+            is ApiResult.Success -> applyUser(result.data.user)
+            is ApiResult.Failure -> result.toFailure()
+        }
+    }
+
+    /**
+     * Replace the profile photo.
+     *
+     * The bytes are already a finished JPEG (see
+     * [com.reprise.app.data.image.AvatarImage]) — this layer only puts them on
+     * the wire, so the size and format decisions stay in one place.
+     */
+    suspend fun uploadProfilePhoto(jpegBytes: ByteArray): ApiResult<User> {
+        val body = AvatarImage.requestBody(jpegBytes)
+
+        return when (val result = apiCall { api.uploadProfilePhoto(body) }) {
+            is ApiResult.Success -> applyUser(result.data.user)
+            is ApiResult.Failure -> result.toFailure()
+        }
+    }
+
+    /** Remove the profile photo, keeping the rest of the profile as it is. */
+    suspend fun removeProfilePhoto(): ApiResult<User> {
+        return when (val result = apiCall { api.deleteProfilePhoto() }) {
             is ApiResult.Success -> applyUser(result.data.user)
             is ApiResult.Failure -> result.toFailure()
         }

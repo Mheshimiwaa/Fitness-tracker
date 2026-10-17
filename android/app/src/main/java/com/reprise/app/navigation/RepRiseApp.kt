@@ -51,6 +51,8 @@ fun RepRiseApp() {
             onChangeFitnessGoal = authViewModel::updateFitnessGoal,
             onChangeWeightUnit = authViewModel::updateWeightUnit,
             onSaveHeight = authViewModel::updateHeight,
+            onPhotoPicked = authViewModel::uploadPhoto,
+            onRemovePhoto = authViewModel::removePhoto,
             onThemeModeChange = settingsViewModel::setThemeMode,
             onReminderEnabledChange = settingsViewModel::setReminderEnabled,
             onReminderTimeChange = settingsViewModel::setReminderTime,

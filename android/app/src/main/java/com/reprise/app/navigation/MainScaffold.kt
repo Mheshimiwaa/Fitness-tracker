@@ -1,5 +1,6 @@
 package com.reprise.app.navigation
 
+import android.net.Uri
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -58,6 +59,8 @@ fun MainScaffold(
     onChangeFitnessGoal: (FitnessGoal) -> Unit,
     onChangeWeightUnit: (WeightUnit) -> Unit,
     onSaveHeight: (Int?) -> Unit,
+    onPhotoPicked: (Uri) -> Unit,
+    onRemovePhoto: () -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
     onReminderEnabledChange: (Boolean) -> Unit,
     onReminderTimeChange: (ReminderTime) -> Unit,
@@ -146,6 +149,8 @@ fun MainScaffold(
                     onChangeFitnessGoal = onChangeFitnessGoal,
                     onChangeWeightUnit = onChangeWeightUnit,
                     onSaveHeight = onSaveHeight,
+                    onPhotoPicked = onPhotoPicked,
+                    onRemovePhoto = onRemovePhoto,
                     onThemeModeChange = onThemeModeChange,
                     onReminderEnabledChange = onReminderEnabledChange,
                     onReminderTimeChange = onReminderTimeChange,

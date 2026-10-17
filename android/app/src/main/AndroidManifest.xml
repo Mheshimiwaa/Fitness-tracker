@@ -36,6 +36,30 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          The camera needs somewhere to write the photo it takes, and Android
+          will not hand a plain file:// path to another app. This provider turns
+          the one file into a content:// URI that is granted, per launch, to
+          whichever camera app handles the request.
+
+          `res/xml/file_paths.xml` limits it to the `cache/avatar/` directory, so
+          the camera is given access to nothing else in the app.
+
+          Note there is deliberately NO android.permission.CAMERA above: the
+          photo is taken by the phone's camera app, not by this one. Declaring
+          the permission would actually BREAK the flow, because Android then
+          requires it to be granted before the camera intent may be sent.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
 
 </manifest>

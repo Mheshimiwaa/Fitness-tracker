@@ -195,6 +195,7 @@ private fun LeaderboardRow(entry: LeaderboardEntry) {
                 displayName = entry.user.displayName,
                 username = entry.user.username,
                 size = 36.dp,
+                profileImageUrl = entry.user.profileImageUrl,
             )
 
             Column(modifier = Modifier.weight(1f)) {

@@ -19,16 +19,17 @@ It lets users track body weight, calculate BMI, log strength workouts, get **pro
 7. [MongoDB Atlas setup](#mongodb-atlas-setup)
 8. [Environment variables](#environment-variables)
 9. [Backend — install & run](#backend--install--run)
-10. [Android — setup & run](#android--setup--run)
-11. [API base URL (emulator vs. physical device)](#api-base-url-emulator-vs-physical-device)
-12. [API endpoints](#api-endpoints)
-13. [Database schema & indexes](#database-schema--indexes)
-14. [Testing](#testing)
-15. [Common errors & solutions](#common-errors--solutions)
-16. [Screenshots](#screenshots)
-17. [Professor demonstration procedure](#professor-demonstration-procedure)
-18. [Implementation phases](#implementation-phases)
-19. [Known limitations & future improvements](#known-limitations--future-improvements)
+10. [Deploying the backend (so it works off your network)](#deploying-the-backend-so-it-works-off-your-network)
+11. [Android — setup & run](#android--setup--run)
+12. [API base URL (emulator vs. physical device)](#api-base-url-emulator-vs-physical-device)
+13. [API endpoints](#api-endpoints)
+14. [Database schema & indexes](#database-schema--indexes)
+15. [Testing](#testing)
+16. [Common errors & solutions](#common-errors--solutions)
+17. [Screenshots](#screenshots)
+18. [Professor demonstration procedure](#professor-demonstration-procedure)
+19. [Implementation phases](#implementation-phases)
+20. [Known limitations & future improvements](#known-limitations--future-improvements)
 
 ---
 
@@ -125,7 +126,7 @@ HTTP request
 helmet → cors → json body parser (100 kb limit) → request logger (dev)
    │  └─ two kinds of request deliberately bypass the JSON path:
    │     PUT /api/users/me/photo is parsed as a raw buffer (up to PHOTO_MAX_BYTES),
-   │     and GET /uploads/… is served by express.static with no route at all.
+   │     and GET /uploads/… is served from the photos collection by its own route.
    ▼
 routes  (URL → controller)
    │
@@ -327,7 +328,8 @@ AuthRepository ──► Retrofit ──► OkHttp
    ▼
 backend · express.raw({ type: PHOTO_CONTENT_TYPES })  →  photo.service.sniff(bytes)
    │  the format comes from the MAGIC BYTES, never from the filename or Content-Type
-   │  stored as <userId>-<random>.<jpg|png|webp> under UPLOADS_DIR; the old file is unlinked
+   │  stored in the `photos` collection as _id = <userId>-<random>.<jpg|png|webp>;
+   │  the doc it replaced is deleted, and the URL is built from the request's host
    ▼
 AuthState.SignedIn(user)   ← profileImageUrl refreshed from the server's reply
    │
@@ -335,16 +337,17 @@ AuthState.SignedIn(user)   ← profileImageUrl refreshed from the server's reply
 UserAvatar   (Coil AsyncImage with ContentScale.Crop, initial letter drawn underneath)
    │  rendered on the profile card, in the friends list and on the leaderboard
    ▼
-GET /uploads/<name>   ← express.static, unauthenticated by design (an <img> URL cannot
+GET /uploads/<name>   ← read from MongoDB, unauthenticated by design (an <img> URL cannot
                         carry a bearer token, and the name is unguessable)
 ```
 
 - **The image is re-encoded on the phone, not sent as-is.** A modern camera produces several megabytes and a 4000-pixel edge; the avatar is 512. Decoding only the bounds first, then a power-of-two `inSampleSize`, then an exact scale, keeps a large photo from ever being held in memory at full size. The result is a small JPEG, so uploads are quick on mobile data.
 - **EXIF metadata is deliberately dropped**, and the rotation is baked into the pixels instead. A photo of a person carries a capture time, often a GPS position, and a camera model; none of that belongs on a shared server, and the rotation has to be applied to display the photo the right way up regardless.
 - **The camera needs no `CAMERA` permission.** A photo is taken by the phone's own camera app through `ACTION_IMAGE_CAPTURE`, which writes the file through our `FileProvider`; declaring `CAMERA` would only make Android demand the permission before the camera app may even be asked. "Take a photo" is hidden entirely on a device with no camera app, rather than opening a chooser that cannot work.
-- **The format is decided by the file's magic bytes.** A filename is a label the client controls and a `Content-Type` is a header it also controls; the first bytes are neither. Unrecognised bytes are rejected as 415, and an oversized body as 413, before anything touches the disk.
-- **Storing on the server, not on the phone.** A picture is part of the social features — it is shown to friends and on the leaderboard — so it has to be readable by other sessions; a device-local file could not be. The URL is built from the request's own host, so the same deployment works from an emulator, a LAN address or a real domain without configuration.
-- **Deleting is guarded.** Only files whose names match the app's own generated pattern are ever unlinked, so a bug can never delete anything but the image it just replaced.
+- **The format is decided by the file's magic bytes.** A filename is a label the client controls and a `Content-Type` is a header it also controls; the first bytes are neither. Unrecognised bytes are rejected as 415, and an oversized body as 413, before anything is stored.
+- **Stored in the database, not on the server's disk.** A hosted deployment's filesystem is wiped on every deploy and restart, which would silently break every avatar; the database is the part of a deployment that survives. The bytes live in `photos` as BSON binary — byte-identical in and out — and only the URL is kept on the user's profile.
+- **The URL is built from the request's own host**, so the same code serves an emulator (`10.0.2.2`), a LAN address and a public https domain with no configuration. Behind a hosting proxy that is what makes the stored URL `https` rather than `http` (see `app.set('trust proxy', 1)`), which matters because Android refuses cleartext to a domain that is not explicitly allow-listed.
+- **Deleting is guarded.** Only names matching the app's own generated pattern are ever looked up or deleted, so a bug can never reach anything but the image it meant to.
 - **There is no `androidTest`.** The one piece with real logic — turning an arbitrary picked file into a correctly oriented, correctly sized JPEG — is written as a pure function of a `Bitmap` and an EXIF orientation, so it is unit-tested on the JVM (`AvatarImageTest`) without a device.
 
 ### Android request flow (Phase 7 — streaks)
@@ -495,14 +498,13 @@ reprise/
     │   ├── middleware/                    # requestLogger, notFound, errorHandler,
     │   │                                  # authenticate, validate, rateLimiter
     │   ├── routes/                        # index, health, auth, users, weights, dashboard,
-    │   │                                  # workouts, progression, friends, leaderboard
+    │   │                                  # workouts, progression, friends, leaderboard, photoFiles
     │   ├── controllers/                   # auth, users, weights, workouts, dashboard, progression,
     │   │                                  # friendship, leaderboard
     │   ├── services/                      # auth, user, weight, workout, bmi, dashboard, progression,
     │   │                                  # friendship, leaderboard, streak, photo
     │   ├── validators/                    # common.fields, auth, user, weight, workout, progression, friendship (Zod)
     │   └── utils/                         # logger, ApiError, password, token, units, objectId
-    ├── uploads/                           # profile pictures, served at /uploads (git-ignored)
     ├── scripts/                           # read-only dev tools (inspect-db.js, serve-db.js)
     └── tests/
         ├── helpers/                       # setup, app, db (shared test utilities)
@@ -552,6 +554,10 @@ reprise/
 
 **Local alternative:** if you have MongoDB installed, use `MONGODB_URI=mongodb://127.0.0.1:27017/reprise`. Everything else works identically.
 
+> **Whose IP do you allow?** The IP in *Network Access* is the address of whatever **connects** to the database. For local development that is your own machine; for a deployed API it is the **host's** servers, not you. A free host has no fixed outbound IP, so a deployment needs `0.0.0.0/0` — see [Deploying the backend](#deploying-the-backend-so-it-works-off-your-network).
+
+> **If Atlas seems unreachable from your own network** (the connection hangs, or fails with `tlsv1 alert internal error`), it is worth knowing that the cause can be the **network you are on**, not the cluster: some ISPs and campus/office networks interfere with port `27017`. A deployed API on a datacenter host is not affected by that, and neither is a phone on mobile data.
+
 ---
 
 ## Environment variables
@@ -573,8 +579,9 @@ cp backend/.env.example backend/.env
 | `BCRYPT_ROUNDS` | no | `10` | password-hash cost factor |
 | `CORS_ORIGIN` | no | `*` | allowed origins (`*` in dev) |
 | `ENABLE_HTTP_LOGS` | no | `true` | dev-only request logging |
-| `UPLOADS_DIR` | no | `backend/uploads` | where profile pictures are written (created on first upload) |
 | `PHOTO_MAX_BYTES` | no | `5242880` | largest accepted profile-picture body, in bytes (5 MB) |
+
+> There is no upload-directory variable: profile pictures are stored in the **`photos` collection** of the database rather than on disk, so they survive a redeploy on a host whose filesystem does not (see [Deploying the backend](#deploying-the-backend-so-it-works-off-your-network)).
 
 Generate a secret:
 
@@ -621,6 +628,62 @@ curl http://localhost:4000/api/health
 ```
 
 If the database is unreachable the endpoint returns **503** with `"status": "degraded"` — the server refuses to pretend everything is fine.
+
+---
+
+## Deploying the backend (so it works off your network)
+
+Everything above runs the API on **your own machine**, which means it is only reachable by devices on **your** network: `http://10.0.2.2:4000/` is an emulator alias, and a LAN address like `http://192.168.8.102:4000/` means nothing to a phone on mobile data. To share the app with someone else, the API needs a **public https URL**, and that URL is compiled into the APK.
+
+The deployed configuration in this repository is **Render** (a free web service) + **MongoDB Atlas** (a free M0 cluster), described by `render.yaml`.
+
+### 1. MongoDB Atlas
+
+1. Create a free **M0** cluster at <https://cloud.mongodb.com> (see [MongoDB Atlas setup](#mongodb-atlas-setup)).
+2. **Database Access** → create a database user, and put the password in the connection string. If it contains any of `` : / ? # [ ] @ ``, [percent-encode it](https://www.mongodb.com/docs/manual/reference/connection-string/#std-label-connection-string-special-characters) (`@` → `%40`).
+3. **Network Access** → allow `0.0.0.0/0`. A free Render service does **not** have a static outbound IP, so the usual "allow only my IP" rule cannot be used — and your *own* IP would never be the one connecting anyway, because the requests come from Render's servers, not from your laptop.
+   *This is the one place the project trades a little security for practicality: the database is protected by its password and by TLS, but it is not IP-restricted. Nothing secret is ever stored in the app's URLs.*
+4. **Connect → Drivers** → copy the string and add the database name, so it ends `/reprise?retryWrites=true&w=majority`.
+
+### 2. Render
+
+1. Push this repository to GitHub first — Render builds from the repository, not from your working copy.
+2. <https://dashboard.render.com> → **New → Blueprint** → pick the repository → **Apply**. `render.yaml` supplies the runtime, the start command, the health check and most of the environment, and sets `rootDir: backend` so the Android app is never built.
+3. When prompted, fill in the two values the blueprint deliberately leaves blank:
+   - **`MONGODB_URI`** — the Atlas string from step 1.
+   - **`JWT_SECRET`** — Render generates a long random one for you (leave the generated value).
+4. Watch the log. A successful start ends with:
+   ```
+   INFO  - Connected to MongoDB (db="reprise", host="…")
+   INFO  - MongoDB indexes ensured.
+   INFO  - RepRise API listening on http://localhost:10000
+   ```
+   The service is only marked **Live** once `/api/health` answers `200`, and that endpoint reports the database — so a green deploy really means the API *and* the database are working.
+5. Your URL is `https://<service-name>.onrender.com`. Confirm it:
+   ```bash
+   curl https://reprise-api.onrender.com/api/health
+   ```
+   If the service name was already taken, Render appends a suffix — make a note of the real URL, because it goes into the app (next step) and into `render.yaml` and `build.gradle.kts` so the two agree.
+
+### 3. Point the app at it
+
+`android/app/build.gradle.kts` already has `https://reprise-api.onrender.com/` in the **release** build type, which is the one you hand to other people. If your URL differs, change that one line. Then:
+
+```bash
+cd android
+./gradlew :app:assembleRelease
+# -> app/build/outputs/apk/release/app-release.apk
+```
+
+That APK is signed with the **debug keystore** on purpose (it is sideloaded, not published to the Play Store), and it is the *same* key as the debug build — so it installs **over** an existing debug build as an update instead of colliding with it.
+
+### Things worth knowing once it is hosted
+
+- **The free plan sleeps** after 15 minutes without traffic, and the next request has to wait for the service to wake (tens of seconds). A sleeping service looks exactly like "can't reach the server" to the app. If that matters for a demonstration, keep it awake with a free uptime monitor (for example UptimeRobot or cron-job.org) pinging `https://<service>.onrender.com/api/health` every 5 minutes. The alternative is a paid instance, which does not sleep.
+- **Photo bytes live in the database** (`photos`), not on the server's disk, because a hosted filesystem is wiped on every deploy and restart. That is why this project stores them there.
+- **Everyone must use the same base URL.** A photo URL is absolute and built from the request's own host, so a picture uploaded through one address is only reachable through that address. If two people use two different URLs (one LAN, one public), one of them sees a broken avatar.
+- **`ENABLE_HTTP_LOGS=true`** is worth keeping on the host: Render's log view is where you watch a friend's registration actually arrive.
+- **Local development is unaffected.** Your `.env` keeps pointing at local `mongod`, and debug builds keep pointing at `10.0.2.2`. The deployed instance uses Atlas, so it has its own separate data.
 
 ### Inspecting the database (development scripts)
 
@@ -682,6 +745,7 @@ The base URL is defined **once** in `android/app/build.gradle.kts` as a `buildCo
 |---|---|---|
 | Android **emulator** | `http://10.0.2.2:4000/` | `10.0.2.2` is the emulator's alias for your computer's `localhost` |
 | **Physical phone** (same Wi-Fi) | `http://<your-computer-LAN-IP>:4000/` | e.g. `http://192.168.1.20:4000/` |
+| **Any phone, any network** | `https://<service>.onrender.com/` | the deployed API — the **release** build type, and the only one that works away from your own network |
 
 For a physical device you must also:
 1. Change `API_BASE_URL` in `app/build.gradle.kts` to your LAN IP.
@@ -994,11 +1058,11 @@ DELETE /api/users/me/photo                     ->  200 { user }   (remove)
 GET    /uploads/<name>                         ->  200 image/…    (public, see below)
 ```
 
-- The body is parsed with `express.raw({ type: PHOTO_CONTENT_TYPES, limit })` — **only** `image/jpeg`, `image/png` and `image/webp` — and the limit is enforced by the parser, so an oversized upload is refused with `413` **before a byte reaches disk**. Authentication runs first, so an anonymous request cannot make the server buffer anything.
+- The body is parsed with `express.raw({ type: PHOTO_CONTENT_TYPES, limit })` — **only** `image/jpeg`, `image/png` and `image/webp` — and the limit is enforced by the parser, so an oversized upload is refused with `413` **before anything is stored**. Authentication runs first, so an anonymous request cannot make the server buffer anything.
 - The format is decided by the file's **magic bytes**, never by the filename or the `Content-Type`: a client controls both of those, and the bytes are what will actually be served back. Anything else is `415` (`unsupportedMediaType`), and a `PUT` with no body is `415` too.
 - `DELETE` returns **`200` with the updated user**, not `204`, so the app can render the empty avatar from the same reply it already knows how to apply — and deleting when there is no photo is a harmless success rather than a `404`.
-- The file is written as `<24-hex userId>-<16-hex random>.<jpg|png|webp>` under `UPLOADS_DIR`, and the URL is built from the **request's own host**, so the same deployment works from an emulator, a LAN address or a real domain with no configuration. Replacing a photo unlinks the old file; the delete path only ever unlinks names matching the app's own generated pattern, so a bug cannot remove anything else.
-- `GET /uploads/…` is **unauthenticated, by design**: it is an `<img src>` URL, which cannot carry a bearer token, and the random name is what makes it unguessable. It is served with `immutable` and a one-week `max-age` (a picture never changes — a replacement gets a new name), and with `Cross-Origin-Resource-Policy: cross-origin` so that a web client on another origin can still display it.
+- The picture is stored in the **`photos` collection** under the name `<24-hex userId>-<16-hex random>.<jpg|png|webp>` — the `_id` **is** that name — and the URL is built from the **request's own host**, so the same deployment works from an emulator, a LAN address or a real domain with no configuration. Replacing a photo deletes the document it replaced; the delete path only ever touches names matching the app's own generated pattern, so a bug cannot remove anything else.
+- `GET /uploads/…` is **unauthenticated, by design**: it is an `<img src>` URL, which cannot carry a bearer token, and the random name is what makes it unguessable. It is served with `immutable` and a one-week `max-age` (a picture never changes — a replacement gets a new name), and with `Cross-Origin-Resource-Policy: cross-origin` so that a web client on another origin can still display it. A name that is not one of ours, or one that no longer exists, is a plain `404`.
 
 **Streaks (shipped).** `GET /api/dashboard` gained a `streak` section, exactly as the phases before it added `weight`, `workouts` and `bmi` — so the Home card appeared without the app needing any rewiring beyond mapping the new section.
 
@@ -1065,6 +1129,11 @@ Workout sessions with embedded exercises and sets.
 One row per relationship. `_id`, `pairKey`, `requesterId`, `recipientId`, `status` (`pending`|`accepted`), `createdAt`, `updatedAt`, `respondedAt?`.
 *`pairKey` is the two user ids sorted and joined (`a:b`); it is identical for A→B and B→A, and is what makes the unique index below forbid a duplicate relationship. Once `status` is `accepted` the direction stops mattering — both users are simply friends. A declined or withdrawn request is **deleted**, not kept as a `rejected` row, so the pair can try again later.*
 
+### `photos`
+Uploaded profile pictures, **one document per photo** — the bytes themselves, not a path.
+`_id` (the file name, `<24-hex userId>-<16-hex random>.<jpg|png|webp>`), `userId`, `contentType`, `size`, `data` (BSON binary), `createdAt`.
+*The `_id` **is** the file name: the name is unique by construction, so MongoDB's built-in unique index on `_id` both prevents any collision and makes serving a photo a single indexed point lookup. `contentType` is what the server sniffed at upload time (never what the client claimed), and `data` is stored as binary so the bytes come back exactly as they went in. Keeping the bytes in the database rather than on disk is what lets the API run on a host whose filesystem is wiped on every deploy.*
+
 ### Indexes
 | Collection | Index | Purpose |
 |---|---|---|
@@ -1073,6 +1142,8 @@ One row per relationship. `_id`, `pairKey`, `requesterId`, `recipientId`, `statu
 | `weight_entries` | `{ userId: 1, measuredAt: -1 }` | "my weight history, newest first" |
 | `workouts` | `{ userId: 1, workoutDate: -1 }` | "my workout history, newest first" |
 | `workouts` | `{ userId: 1, 'exercises.name': 1, workoutDate: -1 }` (`user_exercise_recent`) | one exercise's history for the progressive-overload comparison (Phase 5) — used by both progression endpoints |
+| `photos` | `_id` (built in) | serving `GET /uploads/<name>` — one point lookup per picture |
+| `photos` | `{ userId: 1 }` (`user_photos`) | sweeping **one user's** pictures rather than one at a time (account deletion, and the test suite's cleanup) |
 | `friendships` | `{ requesterId: 1, status: 1 }` (`friendship_requester_status`) | requests I sent / my friendships |
 | `friendships` | `{ recipientId: 1, status: 1 }` (`friendship_recipient_status`) | requests I received |
 | `friendships` | `{ pairKey: 1 }` **unique** (`uniq_friendship_pair`) | exactly **one** row per pair — a duplicate friendship is impossible, even under concurrent requests |
@@ -1092,7 +1163,7 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **143 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **145 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
@@ -1103,9 +1174,9 @@ Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra
 - **Phase 6b** — the scoring rule in isolation (a day with nothing logged scores `0`, `10` per active day, and the `+5` consistency bonus landing **exactly** at three days and not before) and the week boundary (a Wednesday, a Monday and a Sunday night each resolving to the correct Monday `00:00` UTC). Then, end to end: `401` without a token, a friendless user seeing **only themselves on zero**, the board being **me and my friends and nobody else**, a second workout on the same day **not** scoring twice while both still count in `workoutCount`, last week's session not counting at all, a trainer ranking above an idle friend, and two equal scores **sharing a rank**.
 - **Phase 7 (profile)** — on top of the existing "set and validate" coverage: an explicit `heightCm: null` **clears** the stored height (asserted in the response *and* in the database) while everything else is left untouched, which is the semantic the app's height editor depends on.
 - **Phase 7 (streaks)** — the day arithmetic in isolation (`utcDayNumber` counting whole days, and `dayNumberFromKey` reading a `$dateToString` key back) and the two streak helpers over hand-built day lists: a run counts consecutive days, a **gap breaks it**, a duplicate day counts once, and `longestStreak` finds the best run anywhere in the history rather than only the run at the end. Then end to end against real documents: an empty account reporting honest zeros, a three-day run reading `current: 3`, a second session on the same day **not** extending it (`activeDays` unchanged), an older, longer run still reported as `longest` after a break, and deleting the recent days dropping `current` to `0` while `longest` **survives**.
-- **Phase 7 (profile picture)** — the format sniffer in isolation (`pngBytes`/`jpegBytes`/`webpBytes` are each identified, while plain text, an **empty** buffer and a RIFF container that is not a WebP are all `null`), the name guard (`storedFileName` accepts only the app's own generated names and refuses a `null`/empty value, a foreign URL, the right directory with a name it would never write, path traversal both raw and percent-encoded, an unsupported extension and a malformed id), and `deletePhoto` reporting `false` for anything not ours. Then end to end over the real routes: an anonymous upload refused, no body / a non-image / a **JSON** body all `415`, a body over the limit `413`, an upload stored **and served back byte-identical** with the right `Content-Type` and reflected on the profile, the stored extension coming from the **bytes rather than the `Content-Type`** (a JPEG uploaded as `image/png` is stored `.jpg`), WebP accepted, replacing a photo deleting the one it replaced with nothing left behind, another user able to see the URL through search, and deleting clearing both the profile and the file — a second delete being harmless, and a removal leaving a URL some *other* user set alone and deleting no local file.
+- **Phase 7 (profile picture)** — the format sniffer in isolation (`pngBytes`/`jpegBytes`/`webpBytes` are each identified, while plain text, an **empty** buffer and a RIFF container that is not a WebP are all `null`), the name guard (`storedFileName` accepts only the app's own generated names and refuses a `null`/empty value, a foreign URL, the right directory with a name it would never write, path traversal both raw and percent-encoded, an unsupported extension and a malformed id), and `deletePhoto` reporting `false` for anything not ours. Then end to end over the real routes: an anonymous upload refused, no body / a non-image / a **JSON** body all `415`, a body over the limit `413`, an upload stored **and served back byte-identical** with the right `Content-Type` and reflected on the profile, the stored extension coming from the **bytes rather than the `Content-Type`** (a JPEG uploaded as `image/png` is stored `.jpg`), WebP accepted, replacing a photo deleting the one it replaced with nothing left behind, another user able to see the URL through search, a **URL that was never stored** answering `404`, a name that is not one of ours (including a traversal attempt) being refused **before any lookup reaches the database**, and deleting clearing both the profile and the stored bytes — a second delete being harmless, and a removal leaving a URL some *other* user set alone and touching no stored photo.
 
-> **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries, workouts and friendships), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
+> **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries, workouts, **photos** and friendships), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
 **Android**
 
@@ -1253,10 +1324,13 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 | `Missing required environment variable "MONGODB_URI"` | no `backend/.env` | `cp backend/.env.example backend/.env` and fill it in |
 | `Failed to connect to MongoDB` on startup | wrong URI / IP not allow-listed | check the URI, and add your IP in Atlas → Network Access |
 | Health returns `503 degraded` | server is up but the DB ping failed | check the URI and that the cluster is running |
-| `MongooseServerSelectionError`-style timeout | your network blocks port 27017 | allow it, or use a different network |
+| `MongooseServerSelectionError`-style timeout | your network blocks port 27017 | allow it, or use a different network — a deployed API is not affected |
 | Android: `SDK location not found` | `local.properties` missing | create it with `sdk.dir=/path/to/Android/sdk`, or open in Android Studio |
-| Android: `Cleartext HTTP traffic not permitted` | plain-HTTP URL not allow-listed | add your host to `res/xml/network_security_config.xml` |
-| Android: cannot reach the backend | wrong base URL | emulator → `10.0.2.2`; device → your LAN IP |
+| Android: `Cleartext HTTP traffic not permitted` | plain-HTTP URL not allow-listed | add your host to `res/xml/network_security_config.xml`, or use the deployed `https` API |
+| Android: cannot reach the backend (your own device) | wrong base URL | emulator → `10.0.2.2`; device on the same Wi-Fi → your LAN IP, or `adb reverse tcp:4000 tcp:4000` |
+| **A friend gets "can't reach the server"** | the APK points at a **LAN** address, which means nothing on his network | give him the **release** APK, built against the deployed `https` API — see [Deploying the backend](#deploying-the-backend-so-it-works-off-your-network) |
+| Deployed API: `Failed to connect to MongoDB` in the Render log | Atlas has not allow-listed Render, or the URI/password is wrong | Atlas → Network Access → `0.0.0.0/0` (free hosts have no fixed IP), and percent-encode special characters in the password |
+| Deployed API is slow on the first request | the free instance was asleep | expected on the free plan; keep it awake with an uptime monitor, or use a paid instance |
 | `gradlew: Permission denied` | lost the executable bit | `chmod +x android/gradlew` |
 | Android: `Failed to find Platform SDK ... android-37` | SDK Platform 37 not installed | Android Studio → SDK Manager → install **Android SDK Platform 37 (Android 17)**, or `sdkmanager "platforms;android-37.2"` |
 | Android: *"requires ... compile against version 37 or later"* | `compileSdk` too low for the current AndroidX libraries | keep the `compileSdk { version = release(37) { minorApiLevel = 2 } }` block as-is |
@@ -1279,7 +1353,7 @@ The full sequence below is the target for Phase 7. **Currently steps 1–12 are 
 3. You are signed in automatically: rename yourself in Profile and switch **Appearance** between System / Light / Dark. ✅
 4. Show the errors the app surfaces (wrong password, duplicate username, weak password), sign out, then sign back in — close and reopen the app to prove the session is remembered. ✅
 5. Log a body weight from the **Weight** screen (Home → *Log weight*) → show the matching `weight_entries` document in Atlas. ✅
-6. In **Profile**, switch the preferred unit to pounds → reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Add a **height** in the same tab to show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer — then **clear the height** and show the BMI card honestly explaining what is missing. Change the **training goal** while you are there and point out that each card confirms its own save. Finally, set the **profile picture** — take a photo or pick one from the gallery — and show that the avatar appears on the profile, in the **Friends** list and on the **leaderboard**. Point out the file the app created under `backend/uploads/` (the name is the user id plus random hex, *not* the original filename), the `PUT /api/users/me/photo` request in the server log, and that the picture served back is the app's own 512-pixel JPEG with the EXIF data stripped — the original photo is never uploaded as-is. ✅
+6. In **Profile**, switch the preferred unit to pounds → reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Add a **height** in the same tab to show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer — then **clear the height** and show the BMI card honestly explaining what is missing. Change the **training goal** while you are there and point out that each card confirms its own save. Finally, set the **profile picture** — take a photo or pick one from the gallery — and show that the avatar appears on the profile, in the **Friends** list and on the **leaderboard**. Point out that the picture is stored **in the `photos` collection** (the `_id` is the user id plus random hex, *not* the original filename), the `PUT /api/users/me/photo` request in the server log, and that the picture served back is the app's own 512-pixel JPEG with the EXIF data stripped — the original photo is never uploaded as-is. ✅
 7. Create a workout from the **Workouts** tab (*Log workout*): name it, add an exercise with several sets, and save → show the nested `workouts` document in Atlas, and the derived `summary` on the card. Edit it, then delete it. ✅
 8. Log a **second** session with the same exercise, then open **Progress** (Workouts → *Progress*), tap the exercise and show the **progressive-overload comparison**: the latest-vs-previous numbers, the verdict, and the rule-based suggestion. Log a lighter session and show the verdict flip to *Regressing*. ✅
 9. Register a second test account, then on the first account search its username in the **Friends** tab (*Find by username*), send a request, switch accounts, and accept it → show the `friendships` document with its `pairKey` and `status: "accepted"`, and the `uniq_friendship_pair` index. Remove the friendship to show the row disappear. ✅
@@ -1335,8 +1409,10 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 - Progression compares only the **two most recent** sessions of an exercise. That answers "am I moving forward right now?" cleanly; longer-term trend lines would need a chart over `GET /api/progression`'s full session list (which the endpoint already returns).
 - BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.
 - Progressive-overload suggestions are **advisory, rule-based** guidance — not medical advice — and never change a workout automatically.
-- **Profile pictures are stored on the API's local disk** (`UPLOADS_DIR`, git-ignored), not in object storage and not in MongoDB. That is the honest choice for a single-server project: it needs no third-party account, the file is served by `express.static`, and the database keeps only the URL. It also means the directory is **not backed up** by the database, must persist across deployments, and would need replacing with object storage (S3 and the like) if the API were ever run on more than one machine. The API does **not** re-check or re-encode the image beyond sniffing its format, so it trusts the app's downscaling; a hostile client could upload a large-but-valid image right up to `PHOTO_MAX_BYTES`. There is **no moderation** — a picture is shown to friends and on the leaderboard as soon as it is uploaded — and `GET /uploads/…` is deliberately unauthenticated (see the endpoints section).
+- **Profile pictures are stored in MongoDB** (the `photos` collection, BSON binary), not on the server's disk and not in object storage. That is the honest choice for a project that must also run on a free host: the database already exists, it survives a redeploy, and a hosted filesystem does not (a file written to disk disappears on the next deploy or restart, which would silently break every avatar). The trade-off is that the bytes count against the database's storage quota — an M0 cluster has 512 MB — and that a picture is fetched with a database round-trip rather than by a static file handler; at the app's 512-pixel/JPEG size (tens of kilobytes each) that is thousands of pictures before either matters. Object storage (S3 and the like) is what a production system would use instead. The API does **not** re-check or re-encode the image beyond sniffing its format, so it trusts the app's downscaling; a hostile client could upload a large-but-valid image right up to `PHOTO_MAX_BYTES`. There is **no moderation** — a picture is shown to friends and on the leaderboard as soon as it is uploaded — and `GET /uploads/…` is deliberately unauthenticated (see the endpoints section).
 - The **gym reminder's sound lives on the phone too**, like the rest of the reminder. A sound chosen from the user's own files is **copied into the phone's shared sound library** so that Android can play it — which also means it stays there (and appears in Android's own notification-sound list) even if the user later changes the reminder or uninstalls the app. RepRise does not delete it, because the user may have set it as a device-wide sound; the copies are small (capped at 5 MB each).
 - The reminder's **sound** is chosen from the phone's files, not uploaded to the account, so it too does not follow the user to a second device — the same trade the reminder's time and days already make.
 - The Friends screen and the leaderboard show each person's **photo** (via Coil), falling back to their **initial** when they have none — the same avatar the profile shows. Friend requests still carry **no message**, and the friends list is capped at the server's `FRIEND_LIST_MAX` (500).
-- Optional future work: **push** notifications (the gym reminder is local-only, so nothing is sent from a server), friend workout sharing, data export, image moderation, moving uploads to object storage.
+- Optional future work: **push** notifications (the gym reminder is local-only, so nothing is sent from a server), friend workout sharing, data export, image moderation, moving photos from the database to object storage.
+- **On the free hosting plan the API sleeps** after 15 minutes of inactivity, and the first request afterwards waits for it to wake (tens of seconds) — which the app reports as an unreachable server. Keeping it awake needs an external uptime monitor, or a paid instance that does not sleep. See [Deploying the backend](#deploying-the-backend-so-it-works-off-your-network).
+- **The deployed API and a local development setup are two separate worlds**: the deployed instance uses Atlas, your machine uses local `mongod`, and each keeps its own data. A photo URL is absolute and built from the host that received the upload, so mixing the two (one user on the LAN address, another on the public URL) results in a broken avatar for one of them. Everyone must use the same base URL.

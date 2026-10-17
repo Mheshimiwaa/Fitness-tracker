@@ -1,0 +1,52 @@
+# ---------------------------------------------------------------------------
+# RepRise — Render Blueprint
+#
+# This file describes the API as a hosted web service, so the deployment is
+# configuration-as-code instead of a list of dashboard clicks. On Render:
+#
+#   Dashboard -> New -> Blueprint -> pick this repository -> Apply
+#
+# Everything here except the secrets is already correct for this project. The
+# two values Render asks you to fill in are marked `sync: false` below.
+#
+# Docs: https://render.com/docs/blueprint-spec
+# ---------------------------------------------------------------------------
+
+services:
+  - type: web
+    name: reprise-api
+    runtime: node
+    plan: free
+    # Only `backend/` is a Node project — the repository also holds the Android
+    # app, which Render has no business building.
+    rootDir: backend
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    # The API answers this with 200 only when MongoDB is reachable too, so a
+    # deploy is never marked healthy while the database is down.
+    healthCheckPath: /api/health
+    envVars:
+      # --- already correct; nothing to type in -------------------------------
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_DB_NAME
+        value: reprise
+      # A native phone app sends no Origin header, so CORS plays no part here.
+      - key: CORS_ORIGIN
+        value: '*'
+      # Request logging is genuinely useful on a host: it is how you see your
+      # friend's requests arrive.
+      - key: ENABLE_HTTP_LOGS
+        value: 'true'
+
+      # --- fill these in when Render asks ------------------------------------
+      # Your MongoDB Atlas connection string, e.g.
+      #   mongodb+srv://<user>:<password>@<cluster>.mongodb.net/?retryWrites=true&w=majority
+      # Never commit it: it contains your database password.
+      - key: MONGODB_URI
+        sync: false
+
+      # Render generates a long random secret for you, which is better than
+      # reusing the one from local development.
+      - key: JWT_SECRET
+        generateValue: true

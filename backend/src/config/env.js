@@ -61,12 +61,12 @@ const env = {
   corsOrigin: optional('CORS_ORIGIN', '*'),
 
   /**
-   * Where uploaded profile photos are written, and how large one may be.
+   * Largest accepted profile photo, in bytes.
    *
-   * The directory is deliberately OUTSIDE `src/`, and git-ignored: it is
-   * uploaded user data, not source code. It is created on first upload.
+   * There is no directory to configure: the bytes are stored in MongoDB (see
+   * services/photo.service.js), because a hosted deployment's filesystem does
+   * not survive a redeploy.
    */
-  uploadsDir: optional('UPLOADS_DIR', path.resolve(__dirname, '../../uploads')),
   photoMaxBytes: Number(optional('PHOTO_MAX_BYTES', String(PHOTO_MAX_BYTES_DEFAULT))),
 
   // String "false" (any case) disables it; anything else enables it.

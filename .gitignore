@@ -36,6 +36,3 @@ Thumbs.db
 # Test / coverage output
 coverage/
 *.log
-
-# Uploaded profile photos — user data, not source code
-uploads/

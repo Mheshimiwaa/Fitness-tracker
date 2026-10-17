@@ -179,6 +179,16 @@ const PHOTO_MAX_BYTES_DEFAULT = 5 * 1024 * 1024;
 /** URL path photos are served from, and stored under on the user document. */
 const PHOTO_URL_PREFIX = '/uploads';
 
+/**
+ * The Cache-Control header a stored photo is served with.
+ *
+ * A photo's URL is UNIQUE PER UPLOAD — the file name carries random hex — so a
+ * cached copy can never be a stale version of the same URL. That is exactly what
+ * makes `immutable` safe, and why replacing a photo needs no cache-busting.
+ * (604800 seconds = one week.)
+ */
+const PHOTO_CACHE_CONTROL = 'public, max-age=604800, immutable';
+
 /** Milliseconds in a day — shared by every date-window calculation. */
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -227,5 +237,6 @@ module.exports = {
   PHOTO_CONTENT_TYPES,
   PHOTO_MAX_BYTES_DEFAULT,
   PHOTO_URL_PREFIX,
+  PHOTO_CACHE_CONTROL,
   MS_PER_DAY,
 };

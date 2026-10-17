@@ -17,11 +17,30 @@ const requestLogger = require('./middleware/requestLogger');
 const notFound = require('./middleware/notFound');
 const errorHandler = require('./middleware/errorHandler');
 const apiRoutes = require('./routes');
+const photoFilesRoutes = require('./routes/photoFiles.routes');
 
 const app = express();
 
 // Don't advertise that we run Express.
 app.disable('x-powered-by');
+
+/**
+ * Trust exactly ONE proxy in front of us — which is what a hosting platform
+ * (Render, Fly, nginx) puts there.
+ *
+ * This is not cosmetic. Behind that proxy the connection we see is always the
+ * proxy's, so without this:
+ *   - `req.ip` would be the proxy's address, and the rate limiter would lump
+ *     EVERY user into one bucket (one busy friend could lock everyone out);
+ *   - `req.protocol` would be "http", so a stored photo URL would be built as
+ *     `http://…` on an https site and Android's cleartext policy would refuse
+ *     to load it.
+ *
+ * The number (rather than `true`) is deliberate: trusting every hop lets a
+ * client forge `X-Forwarded-For` and invent its own IP, which express-rate-limit
+ * rightly warns about.
+ */
+app.set('trust proxy', 1);
 
 // Sensible security headers (no secrets involved).
 app.use(helmet());
@@ -44,7 +63,7 @@ app.use(requestLogger);
 app.use('/api', apiRoutes);
 
 /**
- * Uploaded profile photos, straight off disk (see services/photo.service.js).
+ * Uploaded profile photos, served out of MongoDB (see services/photo.service.js).
  *
  * These are the one thing served without a token: the URL is what the app hands
  * to an image loader, and its random file name is what keeps it unguessable.
@@ -53,14 +72,11 @@ app.use('/api', apiRoutes);
  * page from embedding a picture it was legitimately given the URL for, so this
  * route relaxes it to `cross-origin`. The native app ignores the header
  * entirely; this is for a browser.
- *
- * The file name changes on every upload, so a cached copy can never be a stale
- * version of the same URL — which is what makes `immutable` safe here.
  */
 app.use(
   PHOTO_URL_PREFIX,
   helmet.crossOriginResourcePolicy({ policy: 'cross-origin' }),
-  express.static(env.uploadsDir, { immutable: true, maxAge: '7d', index: false })
+  photoFilesRoutes
 );
 
 // Unmatched routes -> 404, then the central error handler.

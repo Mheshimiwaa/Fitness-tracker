@@ -11,6 +11,7 @@ const COLLECTIONS = Object.freeze({
   WEIGHT_ENTRIES: 'weight_entries',
   WORKOUTS: 'workouts',
   FRIENDSHIPS: 'friendships',
+  PHOTOS: 'photos',
 });
 
 module.exports = { COLLECTIONS };

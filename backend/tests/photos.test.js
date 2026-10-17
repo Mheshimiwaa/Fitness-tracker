@@ -6,30 +6,24 @@
  * Structure mirrors the other suites: a real HTTP server, a real MongoDB, and
  * `dbTest(...)` cases that skip themselves when the database is unreachable.
  *
- * Two things are set up BEFORE anything imports `src/config/env.js`, because
- * that module reads the environment once:
+ * One thing is set up BEFORE anything imports `src/config/env.js`, because that
+ * module reads the environment once: PHOTO_MAX_BYTES is tiny, so the "too large"
+ * case can be exercised with a few kilobytes instead of five megabytes.
  *
- *   - UPLOADS_DIR points at a throwaway directory, so a test run can never
- *     touch (or litter) the photos a real user uploaded, and every file the
- *     suite creates is deleted in one go afterwards.
- *   - PHOTO_MAX_BYTES is tiny, so the "too large" case can be exercised with a
- *     few kilobytes instead of five megabytes.
+ * The photo BYTES live in the `photos` collection, not on disk (see
+ * services/photo.service.js — a hosted deployment's filesystem does not survive
+ * a redeploy), so "was it stored?" and "was it really deleted?" are questions
+ * about documents.
  *
  * The uploaded bytes are not real pictures: the server identifies a format from
- * its MAGIC NUMBERS and stores the file, and whether the pixels inside are a
- * valid image is the app's concern (it re-encodes every photo before sending
- * it). Building the fixtures from their signatures is therefore both enough and
- * exactly what is under test.
+ * its MAGIC NUMBERS, and whether the pixels inside are a valid image is the
+ * app's concern (it re-encodes every photo before sending it). Building the
+ * fixtures from their signatures is therefore both enough and exactly what is
+ * under test.
  */
 
-const os = require('os');
-const path = require('path');
-const fs = require('fs/promises');
-
-const UPLOADS_DIR = path.join(os.tmpdir(), 'reprise-test-uploads');
 const MAX_BYTES = 2048;
 
-process.env.UPLOADS_DIR = UPLOADS_DIR;
 process.env.PHOTO_MAX_BYTES = String(MAX_BYTES);
 
 const { test, before, after } = require('node:test');
@@ -37,7 +31,12 @@ const assert = require('node:assert/strict');
 
 const { startServer, stopServer, apiRequest } = require('./helpers/app');
 const db = require('./helpers/db');
-const { sniffImageFormat, storedFileName, deletePhoto } = require('../src/services/photo.service');
+const {
+  sniffImageFormat,
+  storedFileName,
+  deletePhoto,
+  findPhoto,
+} = require('../src/services/photo.service');
 
 const PREFIX = 'p9';
 
@@ -100,12 +99,12 @@ before(async () => {
 
 after(async () => {
   if (dbAvailable) {
+    // Every user this suite created, along with their photos, is deleted by
+    // prefix — nothing is left behind for the next run to trip over.
     await db.deleteUserDataByPrefix(PREFIX);
     await db.close();
   }
   await stopServer(server);
-  // Every file this suite wrote lives in the throwaway directory.
-  await fs.rm(UPLOADS_DIR, { recursive: true, force: true });
 });
 
 /** Assert the DB is available, otherwise skip this test. */
@@ -140,11 +139,18 @@ async function fetchPhoto(url) {
   return { status: response.status, contentType: response.headers.get('content-type'), bytes };
 }
 
+/** The file name a photo URL points at — also its `_id` in the database. */
+function nameFrom(url) {
+  return url.slice(url.lastIndexOf('/') + 1);
+}
+
 // ---------------------------------------------------------------------------
 // Authentication
 // ---------------------------------------------------------------------------
 
 dbTest('an anonymous upload is refused', async () => {
+  const before = await db.countPhotos();
+
   const response = await fetch(`${baseUrl}/api/users/me/photo`, {
     method: 'PUT',
     headers: { 'Content-Type': 'image/png' },
@@ -152,8 +158,8 @@ dbTest('an anonymous upload is refused', async () => {
   });
 
   assert.equal(response.status, 401);
-  // Nothing should have been written for an unauthenticated caller.
-  assert.deepEqual(await filesInUploadsDir(), [], 'no file should be written');
+  // Nothing should have been stored for an unauthenticated caller.
+  assert.equal(await db.countPhotos(), before, 'no photo should be stored');
 });
 
 // ---------------------------------------------------------------------------
@@ -232,6 +238,16 @@ dbTest('an uploaded photo is stored, served back and set on the profile', async 
   // ...and the profile now reports it.
   const me = await apiRequest(baseUrl, 'GET', '/api/users/me', { token });
   assert.equal(me.body.user.profileImageUrl, url);
+
+  // The bytes really are stored in the database — sniffed as a PNG, and
+  // byte-for-byte what was uploaded. No filesystem is involved at all, and the
+  // service hands them back as a real Buffer (a BSON Binary would be JSON-
+  // serialised by res.send(), which is exactly the bug this guards against).
+  const stored = await findPhoto(nameFrom(url));
+  assert.equal(stored.contentType, 'image/png');
+  assert.equal(stored.size, bytes.length);
+  assert.ok(Buffer.isBuffer(stored.data), 'the stored bytes must come back as a Buffer');
+  assert.deepEqual(stored.data, bytes);
 });
 
 dbTest('the stored format comes from the bytes, not the Content-Type', async () => {
@@ -267,9 +283,14 @@ dbTest('replacing a photo deletes the one it replaced', async () => {
 
   assert.notEqual(newUrl, oldUrl, 'each upload must get its own URL');
 
-  // The new one is served; the old one is gone rather than left on disk.
+  // The new one is served; the old one is gone rather than left behind.
   assert.equal((await fetchPhoto(newUrl)).status, 200);
   assert.equal((await fetchPhoto(oldUrl)).status, 404);
+  assert.equal(
+    await findPhoto(nameFrom(oldUrl)),
+    null,
+    'the replaced photo should be gone from the database'
+  );
 });
 
 dbTest('another user can see the photo URL through search', async () => {
@@ -293,7 +314,7 @@ dbTest('another user can see the photo URL through search', async () => {
 // Removing
 // ---------------------------------------------------------------------------
 
-dbTest('deleting the photo clears the profile and the file', async () => {
+dbTest('deleting the photo clears the profile and the stored bytes', async () => {
   const { token } = await createUser('delete');
 
   const { body } = await uploadPhoto(baseUrl, token, pngBytes(), 'image/png');
@@ -305,7 +326,8 @@ dbTest('deleting the photo clears the profile and the file', async () => {
   // so the client never has to re-read the profile.
   assert.equal(deleted.status, 200);
   assert.equal(deleted.body.user.profileImageUrl, null);
-  assert.equal((await fetchPhoto(url)).status, 404, 'the file should be gone');
+  assert.equal((await fetchPhoto(url)).status, 404, 'the photo should be gone');
+  assert.equal(await findPhoto(nameFrom(url)), null, 'the document should be gone too');
 });
 
 dbTest('deleting when there is no photo is harmless', async () => {
@@ -333,7 +355,7 @@ dbTest('deleting a photo leaves a URL some other user set alone', async () => {
   assert.equal(body.user.profileImageUrl, null);
 });
 
-dbTest('removing an external URL deletes no local file', async () => {
+dbTest('removing an external URL deletes no stored photo', async () => {
   const { token } = await createUser('external2');
 
   await apiRequest(baseUrl, 'PATCH', '/api/users/me', {
@@ -341,17 +363,49 @@ dbTest('removing an external URL deletes no local file', async () => {
     body: { profileImageUrl: 'https://example.com/avatar.png' },
   });
 
-  const before = await filesInUploadsDir();
+  const before = await db.countPhotos();
   await apiRequest(baseUrl, 'DELETE', '/api/users/me/photo', { token });
 
-  assert.deepEqual(await filesInUploadsDir(), before, 'nothing on disk should change');
+  assert.equal(await db.countPhotos(), before, 'no stored photo should be touched');
+});
+
+// ---------------------------------------------------------------------------
+// Serving
+// ---------------------------------------------------------------------------
+
+dbTest('a photo URL that was never stored is a 404', async () => {
+  // The right SHAPE of name, but nothing was ever uploaded under it — so the
+  // lookup finds nothing and the normal JSON 404 answers.
+  const response = await fetch(`${baseUrl}/uploads/aaaaaaaaaaaaaaaaaaaaaaaa-0123456789abcdef.jpg`);
+
+  assert.equal(response.status, 404);
+  assert.match((await response.json()).error.message, /Route not found/);
+});
+
+test('a name that is not ours is refused before any lookup', async () => {
+  // None of these can match a name this service ever writes, so the guard in
+  // `findPhoto` answers first — including the traversal attempt, whose encoded
+  // slashes are decoded into `req.params.name` before the lookup (and would
+  // otherwise be handed to MongoDB as an `_id`).
+  const paths = [
+    '/uploads/not-a-name.png',
+    '/uploads/aaaaaaaaaaaaaaaaaaaaaaaa-0123456789abcdef.gif',
+    '/uploads/deadbeef-0123456789abcdef.jpg',
+    '/uploads/..%2f..%2fpackage.json',
+    '/uploads/',
+  ];
+
+  for (const path of paths) {
+    const response = await fetch(`${baseUrl}${path}`);
+    assert.equal(response.status, 404, `expected 404 for ${path}`);
+  }
 });
 
 // ---------------------------------------------------------------------------
 // The name guard (pure — no server, no database)
 //
-// `storedFileName` is the only thing standing between a stored URL and an
-// `fs.unlink`, so it is tested directly rather than only through the endpoint.
+// `storedFileName` is the only thing standing between a stored URL and a
+// `deleteOne`, so it is tested directly rather than only through the endpoint.
 // ---------------------------------------------------------------------------
 
 test('only our own generated file names are recognised', () => {
@@ -401,13 +455,3 @@ test('a format is identified from the leading bytes, or not at all', () => {
   // A RIFF container that is not a WebP (e.g. a WAV file).
   assert.equal(sniffImageFormat(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE')])), null);
 });
-
-/** The file names currently in the uploads directory. */
-async function filesInUploadsDir() {
-  try {
-    return await fs.readdir(UPLOADS_DIR);
-  } catch (error) {
-    if (error.code === 'ENOENT') return [];
-    throw error;
-  }
-}

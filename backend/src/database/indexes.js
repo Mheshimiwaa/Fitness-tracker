@@ -51,6 +51,19 @@ async function ensureIndexes() {
       { name: 'user_exercise_recent' }
     );
 
+  // ---- photos ------------------------------------------------------------
+  // A photo's `_id` IS its file name (`<24-hex userId>-<16-hex random>.<ext>`),
+  // and the name is unique by construction — so MongoDB's built-in unique index
+  // on `_id` already serves the only hot query there is: "give me this photo",
+  // as a single point lookup. No extra index can improve on that.
+  //
+  // The one index worth adding is by owner, for the queries that sweep a user's
+  // whole set rather than one photo at a time (deleting an account's pictures,
+  // and the test suite's cleanup between runs).
+  await db
+    .collection(COLLECTIONS.PHOTOS)
+    .createIndex({ userId: 1 }, { name: 'user_photos' });
+
   // ---- friendships -------------------------------------------------------
   // A friendship row is stored once, from the requester's perspective.
   // These indexes support "requests I sent / received" and "my friendships".

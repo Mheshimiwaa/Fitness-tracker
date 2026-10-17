@@ -40,7 +40,8 @@ async function deleteUsersByPrefix(prefix) {
 
 /**
  * Delete every test user whose normalised username starts with `prefix`, ALONG
- * WITH everything that points at them (weight entries, workouts, friendships).
+ * WITH everything that points at them (weight entries, workouts, photos,
+ * friendships).
  *
  * Tests that exercise the user-owned collections must use this one instead of
  * `deleteUsersByPrefix`, otherwise orphaned rows pile up in `reprise_test` run
@@ -65,7 +66,7 @@ async function deleteUserDataByPrefix(prefix) {
   }
 
   const deleted = {};
-  for (const collection of [COLLECTIONS.WEIGHT_ENTRIES, COLLECTIONS.WORKOUTS]) {
+  for (const collection of [COLLECTIONS.WEIGHT_ENTRIES, COLLECTIONS.WORKOUTS, COLLECTIONS.PHOTOS]) {
     deleted[collection] = (
       await db.collection(collection).deleteMany({ userId: { $in: userIds } })
     ).deletedCount;
@@ -98,6 +99,12 @@ async function countWorkouts(userId) {
     .countDocuments({ userId: new ObjectId(userId) });
 }
 
+/** Count every stored profile photo, whichever user it belongs to. */
+async function countPhotos() {
+  const db = getDb();
+  return db.collection(COLLECTIONS.PHOTOS).countDocuments();
+}
+
 /**
  * Count the friendship rows involving a user (any status, either direction).
  *
@@ -124,6 +131,7 @@ module.exports = {
   deleteUserDataByPrefix,
   countWeightEntries,
   countWorkouts,
+  countPhotos,
   countFriendshipsFor,
   findUserDoc,
   close,

@@ -17,6 +17,8 @@
 const path = require('path');
 const dotenv = require('dotenv');
 
+const { PHOTO_MAX_BYTES_DEFAULT } = require('./constants');
+
 // Read backend/.env into process.env. Variables already present in the real
 // environment are NOT overwritten by dotenv, which is the behaviour we want
 // when deploying.
@@ -57,6 +59,15 @@ const env = {
   bcryptRounds: Number(optional('BCRYPT_ROUNDS', '10')),
 
   corsOrigin: optional('CORS_ORIGIN', '*'),
+
+  /**
+   * Where uploaded profile photos are written, and how large one may be.
+   *
+   * The directory is deliberately OUTSIDE `src/`, and git-ignored: it is
+   * uploaded user data, not source code. It is created on first upload.
+   */
+  uploadsDir: optional('UPLOADS_DIR', path.resolve(__dirname, '../../uploads')),
+  photoMaxBytes: Number(optional('PHOTO_MAX_BYTES', String(PHOTO_MAX_BYTES_DEFAULT))),
 
   // String "false" (any case) disables it; anything else enables it.
   enableHttpLogs: optional('ENABLE_HTTP_LOGS', 'true').toLowerCase() !== 'false',

@@ -159,6 +159,26 @@ const LEADERBOARD_POINTS_PER_DAY = 10;
 const LEADERBOARD_BONUS_DAYS = 3;
 const LEADERBOARD_BONUS_POINTS = 5;
 
+/**
+ * Profile photos.
+ *
+ * The app sends the image as the RAW request body rather than as a multipart
+ * form, which is what keeps this project free of a multipart-parser
+ * dependency: one image per request needs no framing beyond a Content-Type.
+ *
+ * The accepted types are listed for the PARSER's benefit (it only reads bodies
+ * carrying one of them). What a file actually IS gets decided by its magic
+ * numbers in `services/photo.service.js` — a client's Content-Type is a hint,
+ * never a fact.
+ */
+const PHOTO_CONTENT_TYPES = Object.freeze(['image/jpeg', 'image/png', 'image/webp']);
+
+/** Fallback ceiling for one photo, overridable with PHOTO_MAX_BYTES. */
+const PHOTO_MAX_BYTES_DEFAULT = 5 * 1024 * 1024;
+
+/** URL path photos are served from, and stored under on the user document. */
+const PHOTO_URL_PREFIX = '/uploads';
+
 /** Milliseconds in a day — shared by every date-window calculation. */
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -204,5 +224,8 @@ module.exports = {
   LEADERBOARD_POINTS_PER_DAY,
   LEADERBOARD_BONUS_DAYS,
   LEADERBOARD_BONUS_POINTS,
+  PHOTO_CONTENT_TYPES,
+  PHOTO_MAX_BYTES_DEFAULT,
+  PHOTO_URL_PREFIX,
   MS_PER_DAY,
 };

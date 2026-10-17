@@ -46,6 +46,16 @@ class ApiError extends Error {
     return new ApiError(429, message);
   }
 
+  /** The body's content type is one this endpoint cannot handle (e.g. a PDF photo). */
+  static unsupportedMediaType(message = 'Unsupported media type.') {
+    return new ApiError(415, message);
+  }
+
+  /** The body was refused because it is larger than the endpoint's limit. */
+  static payloadTooLarge(message = 'That file is too large.') {
+    return new ApiError(413, message);
+  }
+
   static internal(message = 'Something went wrong on the server.') {
     return new ApiError(500, message);
   }

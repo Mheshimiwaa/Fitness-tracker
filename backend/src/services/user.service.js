@@ -182,10 +182,39 @@ async function updateUserProfile(userId, changes) {
   return result;
 }
 
+/**
+ * Point the user's profile image at `url`, or at nothing when `url` is null.
+ *
+ * Returns BOTH documents the caller needs:
+ *   - `previous`, so the photo being replaced can be deleted from disk, and
+ *   - `updated`, so the API can answer with the user's new state.
+ *
+ * It reads the old value and writes the new one in a SINGLE atomic update
+ * (`returnDocument: 'before'`), so a photo can never be orphaned by two
+ * uploads racing: each one learns exactly which file it replaced.
+ *
+ * @param {string} userId
+ * @param {string|null} url
+ */
+async function setProfileImageUrl(userId, url) {
+  const updatedAt = new Date();
+
+  const previous = await users().findOneAndUpdate(
+    { _id: new ObjectId(userId) },
+    { $set: { profileImageUrl: url, updatedAt } },
+    { returnDocument: 'before' }
+  );
+
+  if (!previous) {
+    throw ApiError.notFound('User not found.');
+  }
+
+  return { previous, updated: { ...previous, profileImageUrl: url, updatedAt } };
+}
+
 // ---------------------------------------------------------------------------
 // Serialisation
 // ---------------------------------------------------------------------------
-
 /**
  * Convert a stored user document into the shape the API returns.
  *
@@ -233,6 +262,7 @@ module.exports = {
   searchUsersByUsername,
   createUser,
   updateUserProfile,
+  setProfileImageUrl,
   toPublicUser,
   toUserSummary,
 };

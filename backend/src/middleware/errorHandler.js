@@ -39,6 +39,15 @@ function errorHandler(err, req, res, next) {
     message = `A record with that ${field} already exists.`;
   }
 
+  // body-parser refuses a body over the endpoint's limit before any route code
+  // runs (e.g. a profile photo that is too large). Its own wording leaks the
+  // library's internals, so say something a user can act on.
+  if (err.type === 'entity.too.large') {
+    statusCode = 413;
+    message = 'That file is too large.';
+    details = undefined;
+  }
+
   const isServerError = statusCode >= 500;
 
   if (isServerError) {

@@ -19,6 +19,7 @@ import com.reprise.app.data.remote.dto.ProgressionDto
 import com.reprise.app.data.remote.dto.RegisterRequest
 import com.reprise.app.data.remote.dto.SendFriendRequestRequest
 import com.reprise.app.data.remote.dto.TrackedExerciseListDto
+import com.reprise.app.data.remote.dto.UpdateHeightRequest
 import com.reprise.app.data.remote.dto.UpdateProfileRequest
 import com.reprise.app.data.remote.dto.UpdateWeightRequest
 import com.reprise.app.data.remote.dto.UpdateWorkoutRequest
@@ -303,6 +304,9 @@ private class FakeFriendApi(
 
     override suspend fun updateProfile(body: UpdateProfileRequest): Response<UserEnvelopeDto> =
         throw NotImplementedError("updateProfile is not used by FriendRepository")
+
+    override suspend fun updateHeight(body: UpdateHeightRequest): Response<UserEnvelopeDto> =
+        throw NotImplementedError("updateHeight is not used by FriendRepository")
 
     override suspend fun dashboard(): Response<DashboardDto> =
         throw NotImplementedError("dashboard is not used by FriendRepository")

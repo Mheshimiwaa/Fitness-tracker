@@ -4,7 +4,7 @@ RepRise is a beginner-friendly Android fitness-tracking application built with *
 
 It lets users track body weight, calculate BMI, log strength workouts, get **progressive overload** suggestions, and compete with friends on a weekly leaderboard — inspired by Duolingo's consistency-based social motivation.
 
-> **Project status:** Phases 1–6b are complete and verified. Phase 6b adds the **weekly friends leaderboard** — points for each day trained in the current (UTC) week, computed on the server from the existing `workouts` collection (`GET /api/leaderboard/weekly`) and shown on a dedicated screen reached from the Friends tab. Streaks and the remaining Settings UI (Phase 7) are next. See [Implementation phases](#implementation-phases).
+> **Project status:** Phases 1–6b are complete and verified, and **Phase 7 has begun**: the profile is now fully editable in the app — display name, training goal, preferred unit and height, including *removing* a height (which is what keeps the BMI honest). Streaks are the next Phase 7 feature. See [Implementation phases](#implementation-phases).
 
 ---
 
@@ -46,7 +46,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | Feature | Status |
 |---|---|
 | Registration, login, logout, JWT-protected endpoints | ✅ Phase 2 |
-| Editable profile — rename yourself in-app; goal/unit/height via the API | ✅ Phase 2 |
+| Editable profile — display name, training goal, preferred unit and height, all in-app | ✅ Phase 2, extended in Phase 7 |
 | Dashboard summary with honest empty states | ✅ Phase 3 |
 | Body-weight tracking (CRUD, kg/lb, history, chart, period change) | ✅ Phase 3 |
 | BMI from latest weight + height, with adult categories & disclaimers | ✅ Phase 3 |
@@ -55,7 +55,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | Friends (search, request, accept/reject, list, remove) | ✅ Phase 6a |
 | Weekly leaderboard scored on the server | ✅ Phase 6b |
 | Activity streaks (current + longest) | Planned (Phase 7) |
-| Settings (theme, unit, height, goal, privacy, logout) | 🟡 theme + logout done (Phase 2); the rest in Phase 7 |
+| Settings (theme, unit, height, goal, privacy, logout) | 🟡 theme, logout, unit, goal and height done; privacy still to come |
 
 ### Optional improvements
 - Profile image rendering from a URL
@@ -276,6 +276,31 @@ Friends tab ─── "Weekly leaderboard" card ───► Leaderboard screen 
 - No new collection, dependency or index was needed: `weeklyLeaderboard()` is a **single aggregation over `workouts`** that reuses the existing `user_workout_recent` index.
 - `formatWeekRange()` renders the window in **UTC** (subtracting a day from the exclusive end) so what the screen shows is exactly the Monday→Monday window the server scored.
 
+### Android request flow (Phase 7 — profile editing)
+
+```
+Profile tab
+   │  one card per field; each chip tap / Save button calls its own action
+   ▼
+AuthViewModel   updateDisplayName / updateFitnessGoal / updateWeightUnit / updateHeight
+   │  submit(field = …)
+   ▼
+AuthRepository ──► Retrofit ──► OkHttp
+   │                ├─ updateProfile(UpdateProfileRequest)  // omitted = keep, height NOT clearable
+   │                └─ updateHeight(UpdateHeightRequest)     // always sends heightCm, so null clears
+   ▼
+AuthState.SignedIn(user)   ← the single source of truth, refreshed from the server's reply
+   │
+   ▼
+AuthFormState(field, saved) + fieldErrors  →  only the card that acted shows the outcome
+```
+
+- `AuthViewModel` is the **same** ViewModel the auth screens use: the repository already owns "who is signed in", so a profile write needs no second source of truth — the server's response *is* the new `AuthState`.
+- The shared `AuthFormState` records **which field** acted (`field` + `saved`), so four cards do not all claim the same confirmation. `errorFor(field)` routes a server error to the one card it belongs to, and a failure naming other fields is ignored rather than shown in the wrong place.
+- Chips save **immediately** — a tap *is* the edit — while the display name and height use a text field whose Save button stays disabled until the value actually differs from the stored one.
+- Height is the only **clearable** field, and clearing it needs its own request body; the reason is documented under [Phase 7](#implementation-phases) below.
+- Nothing is faked: every control here performs a real `PATCH` and the screen re-renders from the server's response.
+
 ---
 
 ## Repository structure
@@ -308,7 +333,8 @@ reprise/
 │               │                          # Progression, Friend, Leaderboard, enums
 │               ├── data/
 │               │   ├── remote/            # RepRiseApi, ApiClient, AuthInterceptor,
-│               │   │                      # ApiResult + ApiCall (error parsing), dto/
+│               │   │                      # ApiResult + ApiCall (error parsing),
+│               │   │                      # RepRiseJson (the one JSON config), dto/
 │               │   ├── local/             # TokenStore (encrypted), SettingsStore
 │               │   └── repository/        # AuthRepository (session source of truth),
 │               │                          # WeightRepository (weight + dashboard),
@@ -573,6 +599,18 @@ Rules enforced by the server:
 - `/api/users/me` only ever reads or writes the **caller's own** document.
 - Auth endpoints are rate-limited (`20` requests / 15 min / IP in normal use).
 
+**Profile update flow** *(the app's UI for goal, unit and height arrived in Phase 7)*
+
+```
+PATCH /api/users/me  { displayName?, username?, fitnessGoal?, weightUnit?, heightCm?, profileImageUrl? }
+                  -> 200 { user }
+```
+
+- The body is **partial**: an omitted field keeps its current value. `heightCm` and `profileImageUrl` are the exception — an explicit `null` **clears** them.
+- The Android app expresses "leave it alone" by *omitting* the field (`UpdateProfileRequest` relies on the serializer skipping properties left at their default) and "clear the height" with a **separate body** (`UpdateHeightRequest`, whose `heightCm` has no default and is therefore always encoded). That way `null` is never ambiguous.
+- A `username` that is already taken returns `409`. The app does not expose username or profile-image editing yet.
+- The response is the **updated user**, and `AuthRepository` adopts it as the session state, so the UI can never drift from what was stored.
+
 ### Implemented (Phase 3 — weight tracking, BMI & dashboard)
 | Method | Path | Auth | Description |
 |---|---|---|---|
@@ -800,11 +838,13 @@ Rules the server applies (`src/services/leaderboard.service.js` — everything h
 - `isMe` marks your own row, so the client never needs its own id to highlight it.
 - Scores are **recomputed on every request**; there is deliberately no `points` collection that could drift from the workouts it summarises. **No new index is required** — the aggregation reuses `user_workout_recent`.
 
-### Planned (Phase 7)
+### Phase 7 — in progress
 
-Streaks are the remaining scored feature: `GET /api/dashboard` will gain a `streak` section (current and longest), and the remaining Settings fields (height, goal, unit) get their UI.
+**Profile editing (shipped).** The four personal fields are written from the Profile tab with a real `PATCH /api/users/me`: the display name, the training goal, the preferred unit and the height. Each field has its own card, so only the card that acted shows the confirmation or the error.
 
-> `GET /api/dashboard` has gained a section with each phase the same way — weight/BMI in Phase 3, training totals in Phase 4 — so Phase 7 adds the streak without the app having to be rewired.
+> One detail is worth recording because it is invisible until it misbehaves. `RepRiseJson` leaves `encodeDefaults` at kotlinx's default of `false`, so a property still holding its declared default is **dropped from the request body**. That is exactly how "only send what changed" works — and it also means a `null` in `UpdateProfileRequest` can never mean *clear*, because it is indistinguishable from an omitted field. Clearing a height therefore uses a separate `UpdateHeightRequest`, whose `heightCm` has **no default** and is consequently always encoded. `ProfileRequestEncodingTest` pins both behaviours, and the server test `PATCH /api/users/me clears the height with an explicit null` proves the other half.
+
+**Streaks (next).** `GET /api/dashboard` will gain a `streak` section (current and longest), following the same pattern as the sections added for weight/BMI in Phase 3 and training totals in Phase 4 — so the streak appears without the app having to be rewired.
 
 **Error shape** (every failure):
 
@@ -863,7 +903,7 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **110 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **111 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
@@ -872,6 +912,7 @@ Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra
 - **Phase 5** — the rule-based verdict in isolation (a heavier top set, more volume, more reps at equal volume, a wobble *inside* the tolerance reading as `holding`, a real drop reading as `regressing`, and one-or-zero sessions reporting `insufficient_data`), the suggestion text for kg and lb accounts, the query schema, `401` on both progression routes, and — end to end — an empty-but-valid trend for an unknown exercise, `progressing` from two real sessions, `regressing` from a lighter session, the exercise list's counts, and that one user cannot read another's progression.
 - **Phase 6a** — the canonical pair key is order-independent, the request/param schemas, `401` on **every** friends route, and — end to end — a request visible to both sides, exactly **one** row per pair (a repeat, and the reverse direction while pending, are both `409` and add nothing), accepting making both users friends, only the recipient being able to accept (the sender and a stranger both get `404`), an already-answered request being `409`, decline and withdraw both removing the row, neither party being able to touch a request they are not part of, either friend being able to remove the friendship (and a second removal being `404`), re-requesting a friend being `409`, and friends being listed alphabetically.
 - **Phase 6b** — the scoring rule in isolation (a day with nothing logged scores `0`, `10` per active day, and the `+5` consistency bonus landing **exactly** at three days and not before) and the week boundary (a Wednesday, a Monday and a Sunday night each resolving to the correct Monday `00:00` UTC). Then, end to end: `401` without a token, a friendless user seeing **only themselves on zero**, the board being **me and my friends and nobody else**, a second workout on the same day **not** scoring twice while both still count in `workoutCount`, last week's session not counting at all, a trainer ranking above an idle friend, and two equal scores **sharing a rank**.
+- **Phase 7 (profile)** — on top of the existing "set and validate" coverage: an explicit `heightCm: null` **clears** the stored height (asserted in the response *and* in the database) while everything else is left untouched, which is the semantic the app's height editor depends on.
 
 > **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries, workouts and friendships), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
@@ -883,7 +924,7 @@ cd android
 ./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
 
-The JVM suite (**102 tests**) covers the parts where a mistake is invisible until
+The JVM suite (**117 tests**) covers the parts where a mistake is invisible until
 runtime:
 
 - **`ApiCallTest`** — every shape the API can answer with: a successful response,
@@ -923,6 +964,19 @@ runtime:
   count and the person behind each row (not just their id), the derived `me` row
   picking the entry flagged `isMe`, an empty board having no `me` row, and a
   `401` passing through with the server's message.
+- **`ProfileRequestEncodingTest`** — pins the wire shape of the two profile request
+  bodies: an untouched field is **absent**, goal/unit travel under the server's
+  names, a `null` height on the partial request is **dropped** (so it cannot clear
+  anything), and the dedicated height request sends an explicit `null` — the trick
+  that makes removing a height possible. It runs against the app's real `Json`
+  configuration, so it fails if `encodeDefaults` is ever changed.
+- **`AuthFormStateTest`** — the routing rules behind the profile cards: a field
+  error shows only beside its own field, a generic failure lands on the field the
+  user just acted on, a specific field error wins over the generic message, and
+  only the field that was saved reports success.
+- **`HeightDraftTest`** — the height box's pure parser: empty means *clear*,
+  surrounding whitespace is ignored, the 50–272 cm bounds are inclusive, and text
+  or decimals are rejected rather than silently rounded.
 - **`FriendsUiStateTest`** — the pure helpers that decide what the search box
   shows next to a result: *FRIEND*, *REQUESTED*, *RESPONDS* or *NONE*, which id a
   row's spinner is keyed on (the request id for accepting, the user id for adding
@@ -982,7 +1036,7 @@ The full sequence below is the target for Phase 7. **Currently steps 1–10 are 
 3. You are signed in automatically: rename yourself in Profile and switch **Appearance** between System / Light / Dark. ✅
 4. Show the errors the app surfaces (wrong password, duplicate username, weak password), sign out, then sign back in — close and reopen the app to prove the session is remembered. ✅
 5. Log a body weight from the **Weight** screen (Home → *Log weight*) → show the matching `weight_entries` document in Atlas. ✅
-6. Switch the units in the API to pounds (`PATCH /api/users/me {"weightUnit":"lb"}`) and reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Set a height and show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer. ✅
+6. In **Profile**, switch the preferred unit to pounds → reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Add a **height** in the same tab to show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer — then **clear the height** and show the BMI card honestly explaining what is missing. Change the **training goal** while you are there and point out that each card confirms its own save. ✅
 7. Create a workout from the **Workouts** tab (*Log workout*): name it, add an exercise with several sets, and save → show the nested `workouts` document in Atlas, and the derived `summary` on the card. Edit it, then delete it. ✅
 8. Log a **second** session with the same exercise, then open **Progress** (Workouts → *Progress*), tap the exercise and show the **progressive-overload comparison**: the latest-vs-previous numbers, the verdict, and the rule-based suggestion. Log a lighter session and show the verdict flip to *Regressing*. ✅
 9. Register a second test account, then on the first account search its username in the **Friends** tab (*Find by username*), send a request, switch accounts, and accept it → show the `friendships` document with its `pairKey` and `status: "accepted"`, and the `uniq_friendship_pair` index. Remove the friendship to show the row disappear. ✅
@@ -1013,14 +1067,15 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 | 5 | Progressive overload + unit tests | ✅ **complete & verified** (backend + Progress screen with rule-based verdicts) |
 | 6a | Friends (search, requests, friend list, removal) | ✅ **complete & verified** (backend + full Friends tab) |
 | 6b | Weekly leaderboard scored on the server | ✅ **complete & verified** (backend + a leaderboard screen reached from the Friends tab) |
-| 7 | Streaks, settings, polish, demo prep | ⏳ |
+| 7 | Streaks, settings, polish, demo prep | 🟡 **in progress** — in-app profile editing (name, goal, unit, height) shipped; streaks next |
 
 ---
 
 ## Known limitations & future improvements
 
-- **Phases 1–6b complete** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, friends and the weekly leaderboard work end to end. Streaks and the remaining Settings UI are still to come.
-- The only profile field editable in the app is the **display name**; goal, unit and height can be changed through `PATCH /api/users/me` and get their UI in Phase 7. This means the BMI card prompts you to *"add your height in your profile"* while there is currently no in-app field for it.
+- **Phases 1–6b complete, Phase 7 in progress** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, friends, the weekly leaderboard and in-app profile editing (name, goal, unit, height) all work end to end. Streaks are still to come.
+- The **username** and **profile image** are the only profile fields still read-only in the app: the API accepts both on `PATCH /api/users/me` (the username is normalised and uniqueness-checked, and a clash is a `409`), but there is no UI for them yet.
+- There is no **privacy** setting yet. The only privacy guarantee shipped is on the server: another user can only ever see your display name, username and image (never your email, goal, height or unit).
 - Weight entries and workouts are logged with the **current time** in the app (the common case). Back-dating is supported by the API (`measuredAt` / `workoutDate`) and documented above, but has no date picker in the UI yet.
 - A workout's **training volume is always shown in kilograms**. It is a figure for comparing sessions across units, not a body weight the user chose a unit for, so it is deliberately not converted. Per-set weights *are* converted to the preferred unit.
 - The workout editor does not offer a per-exercise **unit picker**: new sets are entered in the user's preferred unit (the server defaults and converts). Exercises that were originally logged in another unit are shown in the preferred unit and saved back in it.

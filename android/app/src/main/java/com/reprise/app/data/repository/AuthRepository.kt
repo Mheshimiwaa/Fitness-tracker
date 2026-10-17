@@ -7,6 +7,7 @@ import com.reprise.app.data.remote.apiCall
 import com.reprise.app.data.remote.dto.AuthResponseDto
 import com.reprise.app.data.remote.dto.LoginRequest
 import com.reprise.app.data.remote.dto.RegisterRequest
+import com.reprise.app.data.remote.dto.UpdateHeightRequest
 import com.reprise.app.data.remote.dto.UpdateProfileRequest
 import com.reprise.app.data.remote.dto.UserDto
 import com.reprise.app.domain.model.AuthState
@@ -83,27 +84,39 @@ class AuthRepository(
     /**
      * Update the caller's own profile. Only the non-null arguments are sent, so
      * unspecified fields keep their current value.
+     *
+     * There is deliberately no `heightCm` argument: a `null` here would mean
+     * "leave the height alone", not "clear it". Use [updateHeight] to write one.
      */
     suspend fun updateProfile(
         displayName: String? = null,
         fitnessGoal: FitnessGoal? = null,
         weightUnit: WeightUnit? = null,
-        heightCm: Int? = null,
     ): ApiResult<User> {
         val request = UpdateProfileRequest(
             displayName = displayName,
             fitnessGoal = fitnessGoal?.apiValue,
             weightUnit = weightUnit?.apiValue,
-            heightCm = heightCm,
         )
 
         return when (val result = apiCall { api.updateProfile(request) }) {
-            is ApiResult.Success -> {
-                val user = result.data.user.toDomain()
-                _authState.value = AuthState.SignedIn(user)
-                ApiResult.Success(user)
-            }
+            is ApiResult.Success -> applyUser(result.data.user)
+            is ApiResult.Failure -> result.toFailure()
+        }
+    }
 
+    /**
+     * Set or clear the body height.
+     *
+     * Unlike [updateProfile], this body always carries `heightCm` (see
+     * [UpdateHeightRequest]), so passing `null` really does remove the stored
+     * height instead of leaving it untouched.
+     */
+    suspend fun updateHeight(heightCm: Int?): ApiResult<User> {
+        val request = UpdateHeightRequest(heightCm = heightCm)
+
+        return when (val result = apiCall { api.updateHeight(request) }) {
+            is ApiResult.Success -> applyUser(result.data.user)
             is ApiResult.Failure -> result.toFailure()
         }
     }
@@ -125,13 +138,23 @@ class AuthRepository(
         return when (val result = apiCall(call)) {
             is ApiResult.Success -> {
                 tokenStore.saveToken(result.data.token)
-                val user = result.data.user.toDomain()
-                _authState.value = AuthState.SignedIn(user)
-                ApiResult.Success(user)
+                applyUser(result.data.user)
             }
 
             is ApiResult.Failure -> result.toFailure()
         }
+    }
+
+    /**
+     * Adopt the user the server just returned as the new session state.
+     *
+     * Every profile write answers with the updated user, so they all funnel
+     * through here: one place updates the single source of truth.
+     */
+    private fun applyUser(dto: UserDto): ApiResult<User> {
+        val user = dto.toDomain()
+        _authState.value = AuthState.SignedIn(user)
+        return ApiResult.Success(user)
     }
 
     /** Widen `ApiResult.Failure` (an `ApiResult<Nothing>`) to `ApiResult<User>`. */

@@ -77,5 +77,19 @@ data class UpdateProfileRequest(
     val username: String? = null,
     val fitnessGoal: String? = null,
     val weightUnit: String? = null,
+    /** Can only *set* a height: `null` here means "leave it alone" (see [UpdateHeightRequest]). */
     val heightCm: Int? = null,
+)
+
+/**
+ * Body for the same PATCH, used only when the height is being written.
+ *
+ * `heightCm` deliberately has NO default. Because the serializer skips
+ * default-valued properties, [UpdateProfileRequest] can only ever express "set a
+ * height" or "leave it alone" — never "clear it". With no default, this field is
+ * always encoded, so `null` finally becomes a real value the server will act on.
+ */
+@Serializable
+data class UpdateHeightRequest(
+    val heightCm: Int?,
 )

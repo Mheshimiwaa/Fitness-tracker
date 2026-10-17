@@ -22,8 +22,10 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.reprise.app.R
+import com.reprise.app.domain.model.FitnessGoal
 import com.reprise.app.domain.model.ThemeMode
 import com.reprise.app.domain.model.User
+import com.reprise.app.domain.model.WeightUnit
 import com.reprise.app.ui.auth.AuthFormState
 import com.reprise.app.ui.friends.FriendsScreen
 import com.reprise.app.ui.home.HomeScreen
@@ -48,6 +50,9 @@ fun MainScaffold(
     formState: AuthFormState,
     themeMode: ThemeMode,
     onSaveDisplayName: (String) -> Unit,
+    onChangeFitnessGoal: (FitnessGoal) -> Unit,
+    onChangeWeightUnit: (WeightUnit) -> Unit,
+    onSaveHeight: (Int?) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -123,6 +128,9 @@ fun MainScaffold(
                     formState = formState,
                     themeMode = themeMode,
                     onSaveDisplayName = onSaveDisplayName,
+                    onChangeFitnessGoal = onChangeFitnessGoal,
+                    onChangeWeightUnit = onChangeWeightUnit,
+                    onSaveHeight = onSaveHeight,
                     onThemeModeChange = onThemeModeChange,
                     onLogout = onLogout,
                 )

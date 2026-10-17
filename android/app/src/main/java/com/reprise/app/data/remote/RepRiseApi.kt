@@ -15,6 +15,7 @@ import com.reprise.app.data.remote.dto.LoginRequest
 import com.reprise.app.data.remote.dto.ProgressionDto
 import com.reprise.app.data.remote.dto.RegisterRequest
 import com.reprise.app.data.remote.dto.SendFriendRequestRequest
+import com.reprise.app.data.remote.dto.UpdateHeightRequest
 import com.reprise.app.data.remote.dto.UpdateProfileRequest
 import com.reprise.app.data.remote.dto.UpdateWeightRequest
 import com.reprise.app.data.remote.dto.TrackedExerciseListDto
@@ -61,6 +62,16 @@ interface RepRiseApi {
     /** Partial profile update: only the non-null fields are sent. */
     @PATCH("api/users/me")
     suspend fun updateProfile(@Body body: UpdateProfileRequest): Response<UserEnvelopeDto>
+
+    /**
+     * Set or clear the height.
+     *
+     * Same endpoint as [updateProfile], but a different body: this one always
+     * carries `heightCm`, so `null` clears the stored value instead of being
+     * dropped as "no change".
+     */
+    @PATCH("api/users/me")
+    suspend fun updateHeight(@Body body: UpdateHeightRequest): Response<UserEnvelopeDto>
 
     // --- Weight tracking + dashboard (Phase 3) ------------------------------
 

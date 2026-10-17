@@ -50,14 +50,21 @@
     <!-- Profile -->
     <string name="profile_account_title">Account</string>
     <string name="profile_email">Email</string>
-    <string name="profile_goal">Goal</string>
+    <string name="profile_goal">Training goal</string>
     <string name="profile_unit">Preferred unit</string>
     <string name="profile_height">Height</string>
-    <string name="profile_height_value">%1$d cm</string>
     <string name="profile_not_set">Not set</string>
     <string name="profile_edit_name_title">Display name</string>
     <string name="profile_saved">Profile updated</string>
     <string name="profile_appearance_title">Appearance</string>
+
+    <!-- Profile: editable training preferences -->
+    <string name="profile_training_title">Training preferences</string>
+    <string name="profile_goal_hint">Used to frame how your progress is shown.</string>
+    <string name="profile_unit_hint">Every weight in the app is shown in this unit.</string>
+    <string name="profile_height_field">Height (cm)</string>
+    <string name="profile_height_hint">Used for your BMI. Leave it empty to remove it.</string>
+    <string name="profile_height_invalid">Enter a whole number between %1$d and %2$d cm.</string>
 
     <!-- Fitness goals -->
     <string name="goal_lose_weight">Lose weight</string>

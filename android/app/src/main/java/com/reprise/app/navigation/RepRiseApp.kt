@@ -46,6 +46,9 @@ fun RepRiseApp() {
             formState = formState,
             themeMode = themeMode,
             onSaveDisplayName = authViewModel::updateDisplayName,
+            onChangeFitnessGoal = authViewModel::updateFitnessGoal,
+            onChangeWeightUnit = authViewModel::updateWeightUnit,
+            onSaveHeight = authViewModel::updateHeight,
             onThemeModeChange = settingsViewModel::setThemeMode,
             onLogout = authViewModel::logout,
         )

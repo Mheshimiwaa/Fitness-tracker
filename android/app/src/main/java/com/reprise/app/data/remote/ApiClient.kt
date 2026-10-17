@@ -3,7 +3,6 @@ package com.reprise.app.data.remote
 import com.reprise.app.BuildConfig
 import com.reprise.app.data.local.TokenStore
 import java.util.concurrent.TimeUnit
-import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
@@ -17,15 +16,6 @@ import retrofit2.converter.kotlinx.serialization.asConverterFactory
  * type in `app/build.gradle.kts` (emulator -> `http://10.0.2.2:4000/`).
  */
 object ApiClient {
-
-    private val json = Json {
-        // The server may send fields we do not model (createdAt, updatedAt, ...).
-        // Ignoring them means a server addition never breaks the app.
-        ignoreUnknownKeys = true
-        // If a value cannot be decoded, fall back to the property default instead
-        // of throwing.
-        coerceInputValues = true
-    }
 
     /**
      * @param tokenStore provides the JWT that [AuthInterceptor] attaches.
@@ -52,7 +42,7 @@ object ApiClient {
         return Retrofit.Builder()
             .baseUrl(BuildConfig.API_BASE_URL)
             .client(httpClient)
-            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .addConverterFactory(repRiseJson.asConverterFactory("application/json".toMediaType()))
             .build()
             .create(RepRiseApi::class.java)
     }

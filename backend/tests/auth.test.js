@@ -298,6 +298,30 @@ dbTest('PATCH /api/users/me rejects an impossible height', async () => {
   assert.ok(body.error.details.some((d) => d.path === 'heightCm'));
 });
 
+// An explicit `null` is a real value here, not "no change". This is the
+// semantic the Android app relies on to remove a stored height, so pin it.
+dbTest('PATCH /api/users/me clears the height with an explicit null', async () => {
+  const { body: session } = await registerOrLogin(ALEX);
+
+  await apiRequest(baseUrl, 'PATCH', '/api/users/me', {
+    token: session.token,
+    body: { heightCm: 177 },
+  });
+
+  const { status, body } = await apiRequest(baseUrl, 'PATCH', '/api/users/me', {
+    token: session.token,
+    body: { heightCm: null },
+  });
+
+  assert.equal(status, 200);
+  assert.equal(body.user.heightCm, null);
+  // An omitted field still means "keep": only the height changed.
+  assert.equal(body.user.username, ALEX.username);
+
+  const doc = await db.findUserDoc(ALEX.username);
+  assert.equal(doc.heightCm, null);
+});
+
 // ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------

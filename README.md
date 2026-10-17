@@ -55,10 +55,10 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 | Friends (search, request, accept/reject, list, remove) | ✅ Phase 6a |
 | Weekly leaderboard scored on the server | ✅ Phase 6b |
 | Activity streaks (current + longest) | ✅ Phase 7 |
-| Settings (theme, unit, height, goal, reminder, logout) | ✅ theme, unit, goal, height, logout and the gym reminder done; privacy still to come |
+| Profile picture, taken with the camera or picked from the gallery, stored by the API | ✅ Phase 7 |
+| Settings (theme, unit, height, goal, reminder + its sound, logout) | ✅ theme, unit, goal, height, logout, the gym reminder and its sound done; privacy still to come |
 
 ### Optional improvements
-- Profile image rendering from a URL
 - Pagination beyond the first page of history
 - Friend workout-sharing toggle
 - Data export
@@ -71,6 +71,7 @@ The Android app **never connects to MongoDB directly**. Every read and write goe
 - Kotlin, Jetpack Compose, Material 3
 - Navigation Compose, ViewModel, Coroutines & Flow
 - Retrofit + OkHttp (Kotlinx Serialization)
+- Coil (loading profile pictures from the API)
 - DataStore (theme/reminder) + EncryptedSharedPreferences (JWT)
 - WorkManager (the gym-reminder notification)
 - Gradle Kotlin DSL + version catalog
@@ -122,7 +123,9 @@ HTTP request
    │
    ▼
 helmet → cors → json body parser (100 kb limit) → request logger (dev)
-   │
+   │  └─ two kinds of request deliberately bypass the JSON path:
+   │     PUT /api/users/me/photo is parsed as a raw buffer (up to PHOTO_MAX_BYTES),
+   │     and GET /uploads/… is served by express.static with no route at all.
    ▼
 routes  (URL → controller)
    │
@@ -133,7 +136,7 @@ middleware: authenticate → validate(zod) → rateLimit
 controllers (HTTP concerns only)
    │
    ▼
-services (pure logic: auth, profiles, BMI, volume, progression, friendships, leaderboard — and later streaks)
+services (pure logic: auth, profiles, BMI, volume, progression, friendships, leaderboard, streaks, photos)
    │
    ▼
 database (MongoDB collections + indexes)
@@ -302,6 +305,48 @@ AuthFormState(field, saved) + fieldErrors  →  only the card that acted shows t
 - Height is the only **clearable** field, and clearing it needs its own request body; the reason is documented under [Phase 7](#implementation-phases) below.
 - Nothing is faked: every control here performs a real `PATCH` and the screen re-renders from the server's response.
 
+### Request flow (Phase 7 — the profile picture)
+
+The picture is the one profile field that is **not** JSON: it is a file, and it
+travels as raw bytes in both directions.
+
+```
+Profile tab · ProfilePhotoCard   (Take a photo · Choose from gallery · Remove)
+   │
+   │  camera: ActivityResultContracts.TakePicture  → FileProvider URI in cache/avatar/
+   │  gallery: ActivityResultContracts.PickVisualMedia        (no permission either way)
+   ▼
+AuthViewModel   uploadProfilePhoto(uri) / removeProfilePhoto()
+   │  AvatarImage.toJpeg(context, uri)  ← bounds-only decode → inSampleSize →
+   │                                        exact scale to 512 px → EXIF rotation →
+   │                                        JPEG at 85 %, metadata dropped
+   ▼
+AuthRepository ──► Retrofit ──► OkHttp
+   │                ├─ uploadProfilePhoto(@Body RequestBody)  → PUT /api/users/me/photo
+   │                └─ deleteProfilePhoto()                   → DELETE /api/users/me/photo
+   ▼
+backend · express.raw({ type: PHOTO_CONTENT_TYPES })  →  photo.service.sniff(bytes)
+   │  the format comes from the MAGIC BYTES, never from the filename or Content-Type
+   │  stored as <userId>-<random>.<jpg|png|webp> under UPLOADS_DIR; the old file is unlinked
+   ▼
+AuthState.SignedIn(user)   ← profileImageUrl refreshed from the server's reply
+   │
+   ▼
+UserAvatar   (Coil AsyncImage with ContentScale.Crop, initial letter drawn underneath)
+   │  rendered on the profile card, in the friends list and on the leaderboard
+   ▼
+GET /uploads/<name>   ← express.static, unauthenticated by design (an <img> URL cannot
+                        carry a bearer token, and the name is unguessable)
+```
+
+- **The image is re-encoded on the phone, not sent as-is.** A modern camera produces several megabytes and a 4000-pixel edge; the avatar is 512. Decoding only the bounds first, then a power-of-two `inSampleSize`, then an exact scale, keeps a large photo from ever being held in memory at full size. The result is a small JPEG, so uploads are quick on mobile data.
+- **EXIF metadata is deliberately dropped**, and the rotation is baked into the pixels instead. A photo of a person carries a capture time, often a GPS position, and a camera model; none of that belongs on a shared server, and the rotation has to be applied to display the photo the right way up regardless.
+- **The camera needs no `CAMERA` permission.** A photo is taken by the phone's own camera app through `ACTION_IMAGE_CAPTURE`, which writes the file through our `FileProvider`; declaring `CAMERA` would only make Android demand the permission before the camera app may even be asked. "Take a photo" is hidden entirely on a device with no camera app, rather than opening a chooser that cannot work.
+- **The format is decided by the file's magic bytes.** A filename is a label the client controls and a `Content-Type` is a header it also controls; the first bytes are neither. Unrecognised bytes are rejected as 415, and an oversized body as 413, before anything touches the disk.
+- **Storing on the server, not on the phone.** A picture is part of the social features — it is shown to friends and on the leaderboard — so it has to be readable by other sessions; a device-local file could not be. The URL is built from the request's own host, so the same deployment works from an emulator, a LAN address or a real domain without configuration.
+- **Deleting is guarded.** Only files whose names match the app's own generated pattern are ever unlinked, so a bug can never delete anything but the image it just replaced.
+- **There is no `androidTest`.** The one piece with real logic — turning an arbitrary picked file into a correctly oriented, correctly sized JPEG — is written as a pure function of a `Bitmap` and an EXIF orientation, so it is unit-tested on the JVM (`AvatarImageTest`) without a device.
+
 ### Android request flow (Phase 7 — streaks)
 
 ```
@@ -328,16 +373,18 @@ The reminder is the one feature that makes **no HTTP request at all**: it is a
 local notification, scheduled on the phone and stored on the phone.
 
 ```
-Profile tab · ReminderCard   (switch · time wheel · day chips)
+Profile tab · ReminderCard   (switch · time wheel · day chips · sound)
    │
    ▼
-SettingsViewModel   setReminderEnabled / setReminderTime / toggleReminderDay
-   │  write, then re-read
+SettingsViewModel   setReminderEnabled / setReminderTime / toggleReminderDay /
+   │                setReminderSound / importReminderSound
+   │  write, then re-read  (an imported sound is copied into the shared sound library first)
    ▼
 SettingsStore (DataStore)  ──┐
    │  reminder_enabled       │  the single source of truth:
    │  reminder_time "18:30"  │  the job is always scheduled from
    │  reminder_days {"1","3","5"}  what was actually persisted
+   │  reminder_sound_uri / reminder_sound_name   (absent = the phone's default)
    ▼
 GymReminderScheduler.sync(context, reminder)
    │  ONE unique job, replaced on every change
@@ -347,6 +394,12 @@ WorkManager · OneTimeWorkRequest(delay = millisUntilNextReminder(...))
    │  … later …
    ▼
 GymReminderWorker   re-reads the setting → posts the notification → re-arms
+   │
+   ▼
+GymReminderNotifications.show(context, sound)
+   │  reminderChannelId(sound)  ← pure: default · silent · a hash of the sound's URI
+   ▼
+NotificationChannel(id, name, IMPORTANCE_DEFAULT)   with the chosen sound set on it
 ```
 
 - **Local, not server-side.** The reminder is about *this phone's* notifications, exactly like the theme, so it lives in DataStore. It therefore works with no network and no account, and there is no new endpoint — but it also means the setting does not follow the user to a second device. That is the honest trade, and it is the same one the theme already makes.
@@ -358,6 +411,12 @@ GymReminderWorker   re-reads the setting → posts the notification → re-arms
 - **The time is picked on a wheel, not typed.** Two scrollable columns snap to the middle row, so there is no format to get wrong and no keyboard over the card. The wheel is a `LazyColumn` with `SnapPosition.Center` and a padding row at each end (without them `00` and `59` could not be centred), and the chosen value is read from the **layout** rather than from the scroll offset — asking the layout which row's midpoint is nearest the viewport's is right at the padded ends where offset arithmetic is not. The dialog only commits on **Set**, so scrolling past a value does not save it.
 - **A corrupt preferences file degrades instead of crashing.** DataStore's `ReplaceFileCorruptionHandler` swaps an unreadable file for empty preferences, so a damaged file means "theme follows the system, reminder off" rather than an app that cannot start.
 - **`POST_NOTIFICATIONS` is requested only when the switch is turned on**, and the card says so plainly if Android is blocking notifications, rather than showing an "on" switch for a notification that will never appear.
+- **The sound is played by Android, not by the app**, which decides the whole design. The system reads the sound when it posts the notification, so it must be able to open it — and it cannot open a file this app picked with a document picker. Pointing the reminder at the picked file would have installed a reminder that quietly makes no sound on some devices, so the file is first **copied into the phone's shared sound library** (`ReminderSoundImporter`), which is exactly where every other notification sound already lives. As a side effect the imported sound also becomes selectable in Android's own sound settings, so it is not locked inside RepRise.
+- **Android freezes a channel's sound when the channel is created**, so the sound cannot simply be changed on an existing channel — and doing so would also overwrite the volume and importance the user had tuned. Each choice therefore gets **its own channel**: the original `gym_reminder` for the phone's default (re-used deliberately, since the user may already have allowed or tuned it), `gym_reminder_silent`, and `gym_reminder_<hash>` for an imported sound. Channels the user has moved on from are deleted, so Android's notification settings do not fill up with entries named after sounds that are no longer set.
+- **The whole choice is one stored string**, and the three cases are told apart without a schema: absent means the phone's default, the word `silent` means silence, and anything else is the URI of the imported copy. An absent value is the default so that installing the app and never touching this setting leaves no trace — and the default path behaves byte-for-byte as it did before the choice existed.
+- **`reminderChannelId` is a pure function** of the sound, so the mapping that decides *which* channel carries *which* tone is unit-tested (`ReminderChannelsTest`) — worth testing precisely because a mistake there is invisible until the day of the reminder, when one sound would silently play another's tone.
+- **Android 9 and older need storage access** to add a file to the shared library, so `WRITE_EXTERNAL_STORAGE` is capped at API 28 and asked for only at the moment the user reaches for a sound. From Android 10 the copy needs no permission at all.
+- **A file that cannot be used says so.** Importing is the one reminder setting that can fail for a reason worth explaining, so the card shows a specific message (too big to be a notification sound, or unreadable) instead of silently leaving the old sound in place.
 
 ---
 
@@ -389,13 +448,17 @@ reprise/
 │               │                          # AuthNavHost, destinations
 │               ├── domain/model/          # User, AuthState, ThemeMode, Weight, Workout,
 │               │                          # Progression, Friend, Leaderboard, GymReminder,
-│               │                          # enums + the pure rules (streakStatus, …)
+│               │                          # ReminderSound, enums + the pure rules
+│               │                          # (streakStatus, parseStoredReminderSound, …)
 │               ├── data/
 │               │   ├── remote/            # RepRiseApi, ApiClient, AuthInterceptor,
 │               │   │                      # ApiResult + ApiCall (error parsing),
 │               │   │                      # RepRiseJson (the one JSON config), dto/
 │               │   ├── local/             # TokenStore (encrypted), SettingsStore
 │               │   │                      # (theme + gym reminder, both device-local)
+│               │   ├── image/             # AvatarImage: decode → scale → rotate → JPEG
+│               │   ├── audio/             # ReminderSoundImporter: copy a picked sound
+│               │   │                      # into the phone's shared sound library
 │               │   └── repository/        # AuthRepository (session source of truth),
 │               │                          # WeightRepository (weight + dashboard),
 │               │                          # WorkoutRepository (workout logging),
@@ -404,7 +467,8 @@ reprise/
 │               │                          # LeaderboardRepository (weekly leaderboard)
 │               ├── util/                  # Formatting (ISO dates, kg/lb numbers, volume)
 │               ├── notifications/         # GymReminderWorker, GymReminderScheduler,
-│               │                          # GymReminderNotifications (channel + posting)
+│               │                          # GymReminderNotifications (channel + posting),
+│               │                          # ReminderChannels (sound → channel id, pure)
 │               ├── ui/theme/              # Color, Type, Theme, SettingsViewModel
 │               ├── ui/auth/               # LoginScreen, RegisterScreen, AuthViewModel
 │               ├── ui/home/               # HomeScreen (dashboard) + DashboardViewModel
@@ -413,8 +477,8 @@ reprise/
 │               ├── ui/progression/        # ProgressionScreen + ProgressionViewModel
 │               ├── ui/friends/            # FriendsScreen + FriendsViewModel
 │               ├── ui/leaderboard/        # LeaderboardScreen + LeaderboardViewModel
-│               ├── ui/profile/…           # ProfileScreen + the local ReminderCard and
-│               │                          # AppearanceCard editors
+│               ├── ui/profile/…           # ProfileScreen + the ProfilePhotoCard and the
+│               │                          # local ReminderCard / AppearanceCard editors
 │               └── components/            # reusable Compose widgets (ScreenContainer,
 │                                          # DetailScreen, RepRiseCard, WeightChart,
 │                                          # UserAvatar, …)
@@ -435,9 +499,10 @@ reprise/
     │   ├── controllers/                   # auth, users, weights, workouts, dashboard, progression,
     │   │                                  # friendship, leaderboard
     │   ├── services/                      # auth, user, weight, workout, bmi, dashboard, progression,
-    │   │                                  # friendship, leaderboard, streak
+    │   │                                  # friendship, leaderboard, streak, photo
     │   ├── validators/                    # common.fields, auth, user, weight, workout, progression, friendship (Zod)
     │   └── utils/                         # logger, ApiError, password, token, units, objectId
+    ├── uploads/                           # profile pictures, served at /uploads (git-ignored)
     ├── scripts/                           # read-only dev tools (inspect-db.js, serve-db.js)
     └── tests/
         ├── helpers/                       # setup, app, db (shared test utilities)
@@ -448,7 +513,8 @@ reprise/
         ├── progression.test.js
         ├── friends.test.js
         ├── leaderboard.test.js
-        └── streaks.test.js
+        ├── streaks.test.js
+        └── photos.test.js
 ```
 
 ---
@@ -507,6 +573,8 @@ cp backend/.env.example backend/.env
 | `BCRYPT_ROUNDS` | no | `10` | password-hash cost factor |
 | `CORS_ORIGIN` | no | `*` | allowed origins (`*` in dev) |
 | `ENABLE_HTTP_LOGS` | no | `true` | dev-only request logging |
+| `UPLOADS_DIR` | no | `backend/uploads` | where profile pictures are written (created on first upload) |
+| `PHOTO_MAX_BYTES` | no | `5242880` | largest accepted profile-picture body, in bytes (5 MB) |
 
 Generate a secret:
 
@@ -682,7 +750,7 @@ PATCH /api/users/me  { displayName?, username?, fitnessGoal?, weightUnit?, heigh
 
 - The body is **partial**: an omitted field keeps its current value. `heightCm` and `profileImageUrl` are the exception — an explicit `null` **clears** them.
 - The Android app expresses "leave it alone" by *omitting* the field (`UpdateProfileRequest` relies on the serializer skipping properties left at their default) and "clear the height" with a **separate body** (`UpdateHeightRequest`, whose `heightCm` has no default and is therefore always encoded). That way `null` is never ambiguous.
-- A `username` that is already taken returns `409`. The app does not expose username or profile-image editing yet.
+- A `username` that is already taken returns `409`. The app does not expose username editing yet, and the profile image has its own upload route instead of being written as a field — see **Profile picture (shipped)** below.
 - The response is the **updated user**, and `AuthRepository` adopts it as the session state, so the UI can never drift from what was stored.
 
 ### Implemented (Phase 3 — weight tracking, BMI & dashboard)
@@ -918,6 +986,20 @@ Rules the server applies (`src/services/leaderboard.service.js` — everything h
 
 > One detail is worth recording because it is invisible until it misbehaves. `RepRiseJson` leaves `encodeDefaults` at kotlinx's default of `false`, so a property still holding its declared default is **dropped from the request body**. That is exactly how "only send what changed" works — and it also means a `null` in `UpdateProfileRequest` can never mean *clear*, because it is indistinguishable from an omitted field. Clearing a height therefore uses a separate `UpdateHeightRequest`, whose `heightCm` has **no default** and is consequently always encoded. `ProfileRequestEncodingTest` pins both behaviours, and the server test `PATCH /api/users/me clears the height with an explicit null` proves the other half.
 
+**Profile picture (shipped).** The picture is the one profile field that is not JSON, so it has its own two routes and travels as raw bytes in both directions. It is stored server-side rather than on the phone, because it is part of the social features: friends and the leaderboard have to be able to see it.
+
+```
+PUT    /api/users/me/photo    raw image body  ->  200 { user }   (upload or replace)
+DELETE /api/users/me/photo                     ->  200 { user }   (remove)
+GET    /uploads/<name>                         ->  200 image/…    (public, see below)
+```
+
+- The body is parsed with `express.raw({ type: PHOTO_CONTENT_TYPES, limit })` — **only** `image/jpeg`, `image/png` and `image/webp` — and the limit is enforced by the parser, so an oversized upload is refused with `413` **before a byte reaches disk**. Authentication runs first, so an anonymous request cannot make the server buffer anything.
+- The format is decided by the file's **magic bytes**, never by the filename or the `Content-Type`: a client controls both of those, and the bytes are what will actually be served back. Anything else is `415` (`unsupportedMediaType`), and a `PUT` with no body is `415` too.
+- `DELETE` returns **`200` with the updated user**, not `204`, so the app can render the empty avatar from the same reply it already knows how to apply — and deleting when there is no photo is a harmless success rather than a `404`.
+- The file is written as `<24-hex userId>-<16-hex random>.<jpg|png|webp>` under `UPLOADS_DIR`, and the URL is built from the **request's own host**, so the same deployment works from an emulator, a LAN address or a real domain with no configuration. Replacing a photo unlinks the old file; the delete path only ever unlinks names matching the app's own generated pattern, so a bug cannot remove anything else.
+- `GET /uploads/…` is **unauthenticated, by design**: it is an `<img src>` URL, which cannot carry a bearer token, and the random name is what makes it unguessable. It is served with `immutable` and a one-week `max-age` (a picture never changes — a replacement gets a new name), and with `Cross-Origin-Resource-Policy: cross-origin` so that a web client on another origin can still display it.
+
 **Streaks (shipped).** `GET /api/dashboard` gained a `streak` section, exactly as the phases before it added `weight`, `workouts` and `bmi` — so the Home card appeared without the app needing any rewiring beyond mapping the new section.
 
 ```
@@ -1010,7 +1092,7 @@ cd backend
 npm test
 ```
 
-Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **125 tests** currently pass.
+Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra test dependencies. **143 tests** currently pass.
 
 - **Phase 1** — unknown-route `404` handling, and the health check in both the *degraded* and *ok* states.
 - **Phase 2** — registration (incl. duplicate username/email → `409`, case-insensitive email), login (correct / wrong password / unknown user), JWT protection (`401` for missing or malformed tokens), profile updates, and username search (excludes the caller, leaks no private fields).
@@ -1021,6 +1103,7 @@ Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra
 - **Phase 6b** — the scoring rule in isolation (a day with nothing logged scores `0`, `10` per active day, and the `+5` consistency bonus landing **exactly** at three days and not before) and the week boundary (a Wednesday, a Monday and a Sunday night each resolving to the correct Monday `00:00` UTC). Then, end to end: `401` without a token, a friendless user seeing **only themselves on zero**, the board being **me and my friends and nobody else**, a second workout on the same day **not** scoring twice while both still count in `workoutCount`, last week's session not counting at all, a trainer ranking above an idle friend, and two equal scores **sharing a rank**.
 - **Phase 7 (profile)** — on top of the existing "set and validate" coverage: an explicit `heightCm: null` **clears** the stored height (asserted in the response *and* in the database) while everything else is left untouched, which is the semantic the app's height editor depends on.
 - **Phase 7 (streaks)** — the day arithmetic in isolation (`utcDayNumber` counting whole days, and `dayNumberFromKey` reading a `$dateToString` key back) and the two streak helpers over hand-built day lists: a run counts consecutive days, a **gap breaks it**, a duplicate day counts once, and `longestStreak` finds the best run anywhere in the history rather than only the run at the end. Then end to end against real documents: an empty account reporting honest zeros, a three-day run reading `current: 3`, a second session on the same day **not** extending it (`activeDays` unchanged), an older, longer run still reported as `longest` after a break, and deleting the recent days dropping `current` to `0` while `longest` **survives**.
+- **Phase 7 (profile picture)** — the format sniffer in isolation (`pngBytes`/`jpegBytes`/`webpBytes` are each identified, while plain text, an **empty** buffer and a RIFF container that is not a WebP are all `null`), the name guard (`storedFileName` accepts only the app's own generated names and refuses a `null`/empty value, a foreign URL, the right directory with a name it would never write, path traversal both raw and percent-encoded, an unsupported extension and a malformed id), and `deletePhoto` reporting `false` for anything not ours. Then end to end over the real routes: an anonymous upload refused, no body / a non-image / a **JSON** body all `415`, a body over the limit `413`, an upload stored **and served back byte-identical** with the right `Content-Type` and reflected on the profile, the stored extension coming from the **bytes rather than the `Content-Type`** (a JPEG uploaded as `image/png` is stored `.jpg`), WebP accepted, replacing a photo deleting the one it replaced with nothing left behind, another user able to see the URL through search, and deleting clearing both the profile and the file — a second delete being harmless, and a removal leaving a URL some *other* user set alone and deleting no local file.
 
 > **Tests never touch your real data.** `tests/helpers/setup.js` points the suite at a separate **`reprise_test`** database on the same cluster. Every test user is deleted before and after the run **along with everything that points at them** (`deleteUserDataByPrefix` — weight entries, workouts and friendships), so no orphaned documents accumulate. Tests that need the database are **skipped** (not failed) when MongoDB is unreachable, so the pure-validation tests run anywhere.
 
@@ -1029,10 +1112,14 @@ Uses Node's built-in test runner (`node:test`) and built-in `fetch` — no extra
 ```bash
 cd android
 ./gradlew :app:testDebugUnitTest          # JVM unit tests (no device needed)
-./gradlew :app:connectedDebugAndroidTest  # instrumented tests (needs a device/emulator)
 ```
 
-The JVM suite (**149 tests**) covers the parts where a mistake is invisible until
+There are **no instrumented tests**: every rule worth testing is a pure function or
+a repository mapping, both of which run on the JVM in seconds. The parts that
+genuinely need a device — the camera, the document picker, the wheels' scrolling
+and the notification itself — are exercised by hand (see the demo procedure).
+
+The JVM suite (**175 tests**) covers the parts where a mistake is invisible until
 runtime:
 
 - **`ApiCallTest`** — every shape the API can answer with: a successful response,
@@ -1072,6 +1159,33 @@ runtime:
   middle row, a value in between reads back unchanged, a flick past the halfway
   point reads whichever row is nearer, and an un-laid-out wheel (or a middle row
   that is still padding) reports **nothing** rather than guessing a number.
+- **`ReminderSoundTest`** — how the three sound choices are stored as one string,
+  which is worth pinning because "no value" and "silence" are one mistake apart:
+  the phone's default stores **nothing**, silence stores the keyword rather than
+  an empty value (an empty one would read back as the default), an imported sound
+  keeps its URI and name while a blank name is dropped, and every choice survives
+  a round trip. Reading back gives the default for an absent, empty or
+  whitespace-only value, recognises the silence keyword even with a stale name
+  beside it, and treats anything else as an imported sound — including storage
+  written before the name was kept.
+- **`ReminderChannelsTest`** — the mapping from a sound to the channel that will
+  carry it, which is invisible until the day of the reminder: the default keeps
+  the channel that already existed, silence and each imported sound get their own
+  (two different sounds must never share one, because a channel's tone is frozen
+  at creation, while the same URI always maps to the same channel), an imported
+  channel's id is rediscoverable and hex-only, the prefix test recognises the
+  app's channels and leaves a foreign one alone, and the three choices are named
+  differently in Android's settings.
+- **`AvatarImageTest`** — turning a picked photo into the JPEG that is uploaded:
+  a landscape, portrait or square photo is capped **on its longest edge** with the
+  shape kept (the edge landing exactly on the limit, never above it), a photo that
+  is already small enough is left untouched rather than being enlarged, a
+  nonsensical size never produces a zero-pixel image, the bounds-only decode is
+  shrunk by powers of two without going below the target, every EXIF orientation
+  maps to the rotation that makes the photo upright (an unknown one being left
+  alone), and the upload body is the JPEG itself, labelled as a JPEG. The scale and
+  rotation functions take a `Bitmap` and an orientation, so none of this needs a
+  device.
 - **`WorkoutRepositoryTest`** — the same fake-API technique for the workout tree:
   exercises → sets, the display weight *and* the canonical `weightKg`, the derived
   summary, the `days`/`limit` query, the exercise catalogue, the request bodies the
@@ -1158,20 +1272,20 @@ curl -i http://localhost:4000/api/does-not-exist   # -> 404 JSON error
 
 ## Professor demonstration procedure
 
-The full sequence below is the target for Phase 7. **Currently steps 1–12 are runnable, in the app itself.**
+The full sequence below is the target for Phase 7. **Currently steps 1–12 are runnable, in the app itself** — including the profile picture and the reminder's sound.
 
 1. Start the backend and show `GET /api/health` returning `database.connected: true`. ✅
 2. Register a new user in the app → open Atlas → show the `users` document with `passwordHash` (**no** plain-text password). ✅
 3. You are signed in automatically: rename yourself in Profile and switch **Appearance** between System / Light / Dark. ✅
 4. Show the errors the app surfaces (wrong password, duplicate username, weak password), sign out, then sign back in — close and reopen the app to prove the session is remembered. ✅
 5. Log a body weight from the **Weight** screen (Home → *Log weight*) → show the matching `weight_entries` document in Atlas. ✅
-6. In **Profile**, switch the preferred unit to pounds → reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Add a **height** in the same tab to show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer — then **clear the height** and show the BMI card honestly explaining what is missing. Change the **training goal** while you are there and point out that each card confirms its own save. ✅
+6. In **Profile**, switch the preferred unit to pounds → reload → the **same stored entry is displayed in lb**, proving conversion happens on read. Add a **height** in the same tab to show **BMI** calculated from it plus the latest weight, with its WHO category and disclaimer — then **clear the height** and show the BMI card honestly explaining what is missing. Change the **training goal** while you are there and point out that each card confirms its own save. Finally, set the **profile picture** — take a photo or pick one from the gallery — and show that the avatar appears on the profile, in the **Friends** list and on the **leaderboard**. Point out the file the app created under `backend/uploads/` (the name is the user id plus random hex, *not* the original filename), the `PUT /api/users/me/photo` request in the server log, and that the picture served back is the app's own 512-pixel JPEG with the EXIF data stripped — the original photo is never uploaded as-is. ✅
 7. Create a workout from the **Workouts** tab (*Log workout*): name it, add an exercise with several sets, and save → show the nested `workouts` document in Atlas, and the derived `summary` on the card. Edit it, then delete it. ✅
 8. Log a **second** session with the same exercise, then open **Progress** (Workouts → *Progress*), tap the exercise and show the **progressive-overload comparison**: the latest-vs-previous numbers, the verdict, and the rule-based suggestion. Log a lighter session and show the verdict flip to *Regressing*. ✅
 9. Register a second test account, then on the first account search its username in the **Friends** tab (*Find by username*), send a request, switch accounts, and accept it → show the `friendships` document with its `pairKey` and `status: "accepted"`, and the `uniq_friendship_pair` index. Remove the friendship to show the row disappear. ✅
 10. Open **Friends → *Weekly leaderboard*** and show the week: the Monday→Monday UTC window, each friend's rank and points, the `+5` consistency bonus appearing once someone reaches three active days, and your own row marked. Explain that the score is a **live aggregation over `workouts`** — nothing is stored. ✅
 11. Back on **Home**, show the **Streak** card: the current run in days, the personal record, and the state it is in — *at risk* before you train today, *active* once you have. Log a workout and watch it flip. Explain that it is computed from the same `workouts` collection with one UTC-day aggregation, that two sessions in a day count once, and that `longest` survives a broken run. ✅
-12. In **Profile**, turn on the **Gym reminder**, **scroll the wheels** to a time a couple of minutes away and pick the days, and accept the notification permission. Explain that this one is deliberately **local** — it is stored in DataStore on the phone, not on the server, so it needs no network and there is no endpoint for it — and that it is scheduled with WorkManager as a one-shot job that re-arms itself for the next occurrence, so it cannot drift the way a fixed daily repeat would.
+12. In **Profile**, turn on the **Gym reminder**, **scroll the wheels** to a time a couple of minutes away and pick the days, and accept the notification permission. Then tap **Change sound** and either **choose a file from the phone** or set it to *No sound*. Explain why a chosen file is copied into the phone's **shared sound library** first — Android plays a notification's sound, not the app, and it cannot read a file this app picked — and that Android freezes a channel's sound the moment the channel is created, so each sound is posted on its own channel (which is also why the imported sound shows up in Android's own sound settings). Explain that this one is deliberately **local** — it is stored in DataStore on the phone, not on the server, so it needs no network and there is no endpoint for it — and that it is scheduled with WorkManager as a one-shot job that re-arms itself for the next occurrence, so it cannot drift the way a fixed daily repeat would. Let it fire so the chosen sound is heard. ✅
 13. Explain the architecture, REST API, schema, authentication and scoring rules.
 
 **Test accounts** *(already created in Atlas during Phase 2)*:
@@ -1198,17 +1312,17 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 | 5 | Progressive overload + unit tests | ✅ **complete & verified** (backend + Progress screen with rule-based verdicts) |
 | 6a | Friends (search, requests, friend list, removal) | ✅ **complete & verified** (backend + full Friends tab) |
 | 6b | Weekly leaderboard scored on the server | ✅ **complete & verified** (backend + a leaderboard screen reached from the Friends tab) |
-| 7 | Streaks, settings, polish, demo prep | 🟡 **in progress** — in-app profile editing, **activity streaks** and the **gym-reminder notification** shipped; privacy setting, screenshots and demo polish still to come |
+| 7 | Streaks, settings, polish, demo prep | 🟡 **in progress** — in-app profile editing, the **profile picture**, **activity streaks**, the **gym-reminder notification** and its **sound** shipped; privacy setting, screenshots and demo polish still to come |
 
 ---
 
 ## Known limitations & future improvements
 
-- **Phases 1–6b complete, Phase 7 in progress** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, friends, the weekly leaderboard, in-app profile editing (name, goal, unit, height), activity streaks and the gym-reminder notification all work end to end.
+- **Phases 1–6b complete, Phase 7 in progress** — authentication, profiles, body-weight tracking, BMI, the dashboard, workout logging, the progressive-overload assistant, friends, the weekly leaderboard, in-app profile editing (name, goal, unit, height), the profile picture, activity streaks and the gym-reminder notification (with a choosable sound) all work end to end.
 - The **gym reminder is stored on the phone, not the account**, so it does not follow the user to a second device, and it is scheduled with WorkManager rather than an exact alarm — which means Android may deliver it a few minutes late (or, if the phone is in deep doze, later than that). That is a deliberate trade for needing no `SCHEDULE_EXACT_ALARM` permission and for surviving reboots for free; a reminder is not an alarm clock. The reminder also depends on the app not being **force-stopped**: a force-stop cancels pending work on many devices, so the app re-arms the job on every launch. The time is read on the phone's own clock, so travel changes when it fires.
 - The reminder's **time is set on a two-wheel picker**, the way an alarm clock's is — hours and minutes scroll and snap to the middle row, so nothing has to be typed and no invalid time can be entered. Because the wheel only reports whichever row is centred, it is also the one part of the reminder the JVM tests can only cover through its arithmetic (`ReminderWheelTest`); the scrolling itself needs a device.
 - **Preferences are replaced, not repaired, if the DataStore file is corrupted.** A `ReplaceFileCorruptionHandler` swaps a file that cannot be read for empty preferences, so the app degrades to "theme follows the system, reminder off" instead of crashing on launch. That is the recoverable failure, but it does silently lose the settings, so it is a safety net rather than a fix.
-- The **username** and **profile image** are the only profile fields still read-only in the app: the API accepts both on `PATCH /api/users/me` (the username is normalised and uniqueness-checked, and a clash is a `409`), but there is no UI for them yet.
+- The **username** is the only profile field still read-only in the app: the API accepts it on `PATCH /api/users/me` (normalised and uniqueness-checked, with a clash as a `409`), but there is no UI for it yet.
 - There is no **privacy** setting yet. The only privacy guarantee shipped is on the server: another user can only ever see your display name, username and image (never your email, goal, height or unit).
 - Weight entries and workouts are logged with the **current time** in the app (the common case). Back-dating is supported by the API (`measuredAt` / `workoutDate`) and documented above, but has no date picker in the UI yet.
 - A workout's **training volume is always shown in kilograms**. It is a figure for comparing sessions across units, not a body weight the user chose a unit for, so it is deliberately not converted. Per-set weights *are* converted to the preferred unit.
@@ -1221,5 +1335,8 @@ All demo data is created through the app so Atlas shows genuine, reproducible re
 - Progression compares only the **two most recent** sessions of an exercise. That answers "am I moving forward right now?" cleanly; longer-term trend lines would need a chart over `GET /api/progression`'s full session list (which the endpoint already returns).
 - BMI is a **screening measure only** and is not a measure of muscle mass or body-fat percentage. Adult categories are not presented as definitive for users under 20.
 - Progressive-overload suggestions are **advisory, rule-based** guidance — not medical advice — and never change a workout automatically.
-- The Friends screen shows an avatar as the person's **initial**: the project deliberately has no image-loading library, so `profileImageUrl` is stored and returned by the API but not drawn. Friend requests carry **no message**, and the friends list is capped at the server's `FRIEND_LIST_MAX` (500).
-- Optional future work: **push** notifications (the gym reminder is local-only, so nothing is sent from a server), profile images, friend workout sharing, data export.
+- **Profile pictures are stored on the API's local disk** (`UPLOADS_DIR`, git-ignored), not in object storage and not in MongoDB. That is the honest choice for a single-server project: it needs no third-party account, the file is served by `express.static`, and the database keeps only the URL. It also means the directory is **not backed up** by the database, must persist across deployments, and would need replacing with object storage (S3 and the like) if the API were ever run on more than one machine. The API does **not** re-check or re-encode the image beyond sniffing its format, so it trusts the app's downscaling; a hostile client could upload a large-but-valid image right up to `PHOTO_MAX_BYTES`. There is **no moderation** — a picture is shown to friends and on the leaderboard as soon as it is uploaded — and `GET /uploads/…` is deliberately unauthenticated (see the endpoints section).
+- The **gym reminder's sound lives on the phone too**, like the rest of the reminder. A sound chosen from the user's own files is **copied into the phone's shared sound library** so that Android can play it — which also means it stays there (and appears in Android's own notification-sound list) even if the user later changes the reminder or uninstalls the app. RepRise does not delete it, because the user may have set it as a device-wide sound; the copies are small (capped at 5 MB each).
+- The reminder's **sound** is chosen from the phone's files, not uploaded to the account, so it too does not follow the user to a second device — the same trade the reminder's time and days already make.
+- The Friends screen and the leaderboard show each person's **photo** (via Coil), falling back to their **initial** when they have none — the same avatar the profile shows. Friend requests still carry **no message**, and the friends list is capped at the server's `FRIEND_LIST_MAX` (500).
+- Optional future work: **push** notifications (the gym reminder is local-only, so nothing is sent from a server), friend workout sharing, data export, image moderation, moving uploads to object storage.
